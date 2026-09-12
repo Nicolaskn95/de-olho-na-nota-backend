@@ -21,5 +21,6 @@ import { Categoria, CategoriaSchema } from '../categoria/schemas/categoria.schem
   ],
   controllers: [DuracaoMediaController],
   providers: [DuracaoMediaService, QwenAiService],
+  exports: [QwenAiService],
 })
 export class DuracaoMediaModule {}

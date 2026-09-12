@@ -32,6 +32,18 @@ export interface ResultadoIaQwen {
   modeloUsado: string
 }
 
+export interface CategoriaDisponivel {
+  id: string
+  codigo: string
+  nome: string
+}
+
+export interface ResultadoClassificacaoItem {
+  produto: string
+  prefixo: string
+  codigoCategoria: string
+}
+
 @Injectable()
 export class QwenAiService {
   private readonly logger = new Logger(QwenAiService.name)
@@ -234,4 +246,211 @@ Instruções:
       modeloUsado: 'Fallback Algorítmico Local',
     }
   }
+
+  async classificarProdutos(
+    produtos: string[],
+    categorias: CategoriaDisponivel[],
+  ): Promise<ResultadoClassificacaoItem[]> {
+    if (!produtos || produtos.length === 0) return []
+
+    const apiUrl =
+      this.configService.get<string>('QWEN_API_URL') ||
+      process.env.QWEN_API_URL ||
+      'https://openrouter.ai/api/v1/chat/completions'
+
+    const apiKey =
+      this.configService.get<string>('QWEN_API_KEY') ||
+      process.env.QWEN_API_KEY ||
+      ''
+
+    const model =
+      this.configService.get<string>('QWEN_MODEL') ||
+      process.env.QWEN_MODEL ||
+      'qwen/qwen-2.5-72b-instruct:free'
+
+    if (!apiKey) {
+      this.logger.warn(
+        'QWEN_API_KEY não configurada para classificação. Usando fallback local por palavras-chave.',
+      )
+      return this.classificarFallbackLocal(produtos, categorias)
+    }
+
+    try {
+      const categoriasFormatadas = categorias.map((c) => ({
+        codigo: c.codigo,
+        nome: c.nome,
+      }))
+
+      const prompt = `Você é um assistente especialista em categorização de produtos de supermercado e nota fiscal brasileira.
+Dada a lista de nomes de produtos de nota fiscal:
+${JSON.stringify(produtos, null, 2)}
+
+E a lista de categorias disponíveis no sistema:
+${JSON.stringify(categoriasFormatadas, null, 2)}
+
+Instruções:
+1. Para cada produto da lista, escolha EXATAMENTE UMA categoria da lista fornecida (pelo seu 'codigo').
+2. Crie um 'prefixo' curto e significativo em LETRAS MAIÚSCULAS (ex: para "SABÃO EM PÓ OMO 1KG", o prefixo pode ser "SABAO" ou "OMO", preferindo a primeira palavra principal do produto ou a marca/termo mais característico, sem acentos). O prefixo deve ter de 2 a 15 caracteres.
+3. Retorne EXCLUSIVAMENTE um array JSON de objetos no seguinte formato, sem formatação markdown extra fora do JSON:
+
+[
+  {
+    "produto": "nome original do produto",
+    "prefixo": "PREFIXO",
+    "codigoCategoria": "CODIGO_DA_CATEGORIA"
+  }
+]`
+
+      const response = await axios.post(
+        apiUrl,
+        {
+          model,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Você é um classificador automático de produtos de supermercado. Responda estritamente em formato JSON.',
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          temperature: 0.1,
+          max_tokens: 1500,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://de-olho-na-nota.local',
+            'X-Title': 'De Olho na Nota - Classificacao IA',
+          },
+          timeout: 25000,
+        },
+      )
+
+      const rawContent = response.data?.choices?.[0]?.message?.content
+      if (!rawContent) {
+        throw new Error('Resposta vazia da API do Qwen')
+      }
+
+      const jsonStr = rawContent
+        .replace(/```json/gi, '')
+        .replace(/```/g, '')
+        .trim()
+
+      const parsed = JSON.parse(jsonStr)
+      if (Array.isArray(parsed)) {
+        return parsed.map((item: any) => ({
+          produto: item.produto || '',
+          prefixo: String(item.prefixo || '').toUpperCase().trim(),
+          codigoCategoria: String(item.codigoCategoria || '').toUpperCase().trim(),
+        }))
+      }
+
+      throw new Error('Resposta da IA não é um array válido')
+    } catch (error: any) {
+      this.logger.error(
+        `Erro ao classificar produtos via Qwen API (${error?.message}). Ativando fallback local.`,
+      )
+      return this.classificarFallbackLocal(produtos, categorias)
+    }
+  }
+
+  private classificarFallbackLocal(
+    produtos: string[],
+    categorias: CategoriaDisponivel[],
+  ): ResultadoClassificacaoItem[] {
+    const codigosExistentes = new Set(categorias.map((c) => c.codigo.toUpperCase()))
+
+    return produtos.map((prod) => {
+      const prodUpper = prod.toUpperCase().trim()
+      const palavras = prodUpper.split(/\s+/).filter((p) => p.length >= 2)
+
+      let prefixo = (palavras[0] || 'PROD')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Z0-9]/g, '')
+
+      if (prefixo.length < 2) prefixo = 'PROD'
+
+      let codigoCategoria = 'MERCEARIA_SECA'
+
+      if (
+        /CARNE|BEEF|ALCATRA|CONTRA|PICANHA|FRANGO|COXA|CORACAO|PEIXE|TINHA|BACON|LINGUICA|COSTELA|BIFE|PESCADA|TILAPIA|SARDINHA/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'ACOUGUE_E_PEIXARIA'
+      } else if (
+        /BANANA|MACA|LARANJA|LIMAO|MANG|UVA|MELANCIA|MAMAO|ABACAXI|MORANGO|PERA|MARACUJA|KIWI|AVOCADO|ABACATE/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'HORTIFRUTI_FRUTAS'
+      } else if (
+        /ALFACE|TOMATE|BATATA|CEBOLA|ALHO|CENOURA|CHUCHU|ABOBORA|BROCOLIS|COUVE|ESPINAFRE|REPOLHO|PEPINO|BETERRABA|PIMENTAO/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'HORTIFRUTI_VERDURAS_E_LEGUMES'
+      } else if (
+        /LEITE|QUEIJO|REQUEIJAO|MANTEIGA|MARGARINA|IOGURTE|YOGURT|NATAS|REQUEIJ|CREME DE LEITE|MOZZARELLA|MUSSARELA|OVO|OVOS/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'LATICINIOS_E_OVOS'
+      } else if (
+        /PAO|BOLO|TORRADA|SONHO|BISNAGUITA|CROISSANT|BAGUETE|PAOZINHO|PANETONE/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'PADARIA_E_CONFEITARIA'
+      } else if (
+        /SORVETE|PIZZA|HAMBURGUER|NUGGETS|LASANHA|CONGELAD/i.test(prodUpper)
+      ) {
+        codigoCategoria = 'CONGELADOS'
+      } else if (
+        /AGUA|REFRIGERANTE|COCA|GUARANA|SUCO|CERVEJA|CHOPP|VINHO|VODKA|WHISKY|ENERG|NECTAR|BEBIDA/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'BEBIDAS'
+      } else if (
+        /SABAO|DETERGENTE|AMACIANTE|DESINFETANTE|AGUA SANITARIA|ALCOOL|SAPOLIO|LAVAND|LIMPADOR|INSETICIDA|ESPONJA|MULTIUSO/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'LIMPEZA'
+      } else if (
+        /SHAMPOO|CONDICIONADOR|SABONETE|PASTA DE DENTE|CREME DENTAL|DESODORANTE|PAPEL HIGIENICO|ABSORVENTE|FRALDA|GILETTE|COTONETE/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'HIGIENE_E_BELEZA'
+      } else if (
+        /PET|RACAO|RAÇAO|GATO|CACHORRO|WHISKAS|PEDIGREE|SACHE/i.test(prodUpper)
+      ) {
+        codigoCategoria = 'PET_SHOP'
+      } else if (
+        /PRATO|COPO|TALHER|GUARDANAPO|POTE|VASSOURA|RODO|LAMPADA|PILHA|VELA/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'UTILIDADES_DOMESTICAS'
+      }
+
+      if (!codigosExistentes.has(codigoCategoria)) {
+        codigoCategoria = Array.from(codigosExistentes)[0] || 'MERCEARIA_SECA'
+      }
+
+      return {
+        produto: prod,
+        prefixo,
+        codigoCategoria,
+      }
+    })
+  }
 }
+

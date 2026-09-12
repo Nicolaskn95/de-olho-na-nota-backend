@@ -11,6 +11,9 @@ import { Categoria } from './schemas/categoria.schema'
 import { Prefixo } from './schemas/prefixo-categoria.schema'
 import { CriarPrefixoDto } from './dto/criar-prefixo.dto'
 import { ImportarPrefixosDto } from './dto/importar-prefixos.dto'
+import { NotaFiscal } from '../nota-fiscal/schemas/nota-fiscal.schema'
+import { ClassificarProdutosIaDto } from './dto/classificar-produtos-ia.dto'
+import { QwenAiService } from '../duracao-media/qwen-ai.service'
 
 export interface ImportarPrefixosResultado {
   criados: number
@@ -28,6 +31,9 @@ export class CategoriaService implements OnModuleInit {
     private categoriaModel: Model<Categoria>,
     @InjectModel(Prefixo.name)
     private prefixoModel: Model<Prefixo>,
+    @InjectModel(NotaFiscal.name)
+    private notaFiscalModel: Model<NotaFiscal>,
+    private qwenAiService: QwenAiService,
   ) {}
 
   async onModuleInit() {
@@ -229,4 +235,97 @@ export class CategoriaService implements OnModuleInit {
 
     return null
   }
+
+  async classificarProdutosComIa(
+    userId: string,
+    dto: ClassificarProdutosIaDto,
+  ): Promise<Prefixo[]> {
+    const userObjectId = this.toUserId(userId)
+    let produtosNomes: string[] = dto.produtos || []
+
+    // Se notaFiscalId for fornecido, o backend busca a nota fiscal no banco e lê os nomes dos produtos diretamente
+    if (dto.notaFiscalId) {
+      const nota = await this.notaFiscalModel
+        .findOne({ _id: dto.notaFiscalId, userId: userObjectId })
+        .populate('produtos')
+        .exec()
+
+      if (nota && Array.isArray(nota.produtos)) {
+        const nomesDoBanco = nota.produtos
+          .map((p: any) => (typeof p === 'object' && p?.nome ? p.nome : null))
+          .filter(Boolean)
+        produtosNomes = Array.from(new Set([...produtosNomes, ...nomesDoBanco]))
+      }
+    }
+
+    const categorias = await this.categoriaModel.find().exec()
+    const codigoMap = new Map(
+      categorias.map((c) => [c.codigo.toUpperCase(), c._id]),
+    )
+
+    const categoriasDisponiveis = categorias.map((c) => ({
+      id: c._id.toString(),
+      codigo: c.codigo,
+      nome: c.nome,
+    }))
+
+    // Buscar prefixos já existentes do usuário para pular produtos já classificados
+    const existentes = await this.prefixoModel
+      .find({ userId: userObjectId })
+      .select('prefixo')
+      .exec()
+
+    const existentesSet = new Set(existentes.map((p) => p.prefixo.toUpperCase()))
+    const prefixosOrdenados = Array.from(existentesSet).sort((a, b) => b.length - a.length)
+
+    // Filtrar apenas produtos que AINDA NÃO possuem classificação
+    const produtosSemCategoria = produtosNomes.filter((nomeProd) => {
+      const nomeUpper = nomeProd.toUpperCase().trim()
+      if (!nomeUpper) return false
+      return !prefixosOrdenados.some((prefixo) => nomeUpper.startsWith(prefixo))
+    })
+
+    if (produtosSemCategoria.length === 0) {
+      this.logger.log('Todos os produtos já possuem classificação. Nenhum novo prefixo inserido.')
+      return this.listarPrefixos(userId)
+    }
+
+    // Chamar IA para classificar os produtos pendentes
+    const classificacoes = await this.qwenAiService.classificarProdutos(
+      produtosSemCategoria,
+      categoriasDisponiveis,
+    )
+
+    const novosPrefixosDocs: Array<{
+      prefixo: string
+      categoria: Types.ObjectId
+      userId: Types.ObjectId
+    }> = []
+
+    for (const c of classificacoes) {
+      const prefixoUpper = c.prefixo.toUpperCase().trim()
+      const codigoCat = c.codigoCategoria.toUpperCase().trim()
+      const categoriaId = codigoMap.get(codigoCat) as Types.ObjectId | undefined
+
+      if (!categoriaId || prefixoUpper.length < 2) continue
+
+      if (!existentesSet.has(prefixoUpper)) {
+        novosPrefixosDocs.push({
+          prefixo: prefixoUpper,
+          categoria: categoriaId,
+          userId: userObjectId,
+        })
+        existentesSet.add(prefixoUpper)
+      }
+    }
+
+    // Inserção em lote (insertMany) dos novos prefixos gerados pela IA
+    if (novosPrefixosDocs.length > 0) {
+      this.logger.log(`Inserindo ${novosPrefixosDocs.length} novos prefixos via insertMany...`)
+      await this.prefixoModel.insertMany(novosPrefixosDocs, { ordered: false })
+    }
+
+    return this.listarPrefixos(userId)
+  }
 }
+
