@@ -102,24 +102,61 @@ export class AuthService {
     process.env.GOOGLE_CLIENT_ID || '743020408271-ge3g4tooe22eb2m83vsek8iuvfedjhrj.apps.googleusercontent.com',
   );
 
-  async googleLogin(dto: GoogleLoginDto) {
-    let payload;
+  private async verifyGoogleToken(token: string): Promise<{
+    sub: string;
+    email: string;
+    name?: string;
+    picture?: string;
+  }> {
+    if (token.startsWith('ya29.')) {
+      try {
+        const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          throw new Error('Falha na requisição userinfo do Google');
+        }
+        const userInfo = await res.json();
+        if (!userInfo || !userInfo.sub || !userInfo.email) {
+          throw new UnauthorizedException('Informações do Google incompletas');
+        }
+        return {
+          sub: userInfo.sub,
+          email: userInfo.email,
+          name: userInfo.name,
+          picture: userInfo.picture,
+        };
+      } catch (err) {
+        if (err instanceof UnauthorizedException) throw err;
+        throw new UnauthorizedException('Token do Google inválido');
+      }
+    }
+
     try {
       const ticket = await this.googleOAuthClient.verifyIdToken({
-        idToken: dto.idToken,
+        idToken: token,
         audience: [
           process.env.GOOGLE_CLIENT_ID || '743020408271-ge3g4tooe22eb2m83vsek8iuvfedjhrj.apps.googleusercontent.com',
         ],
       });
-      payload = ticket.getPayload();
+      const payload = ticket.getPayload();
+      if (!payload || !payload.sub || !payload.email) {
+        throw new UnauthorizedException('Informações do Google incompletas');
+      }
+      return {
+        sub: payload.sub,
+        email: payload.email,
+        name: payload.name,
+        picture: payload.picture,
+      };
     } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
       throw new UnauthorizedException('Token do Google inválido');
     }
+  }
 
-    if (!payload || !payload.email) {
-      throw new UnauthorizedException('Informações do Google incompletas');
-    }
-
+  async googleLogin(dto: GoogleLoginDto) {
+    const payload = await this.verifyGoogleToken(dto.idToken);
     const { sub: googleId, email, name, picture } = payload;
     const cleanEmail = email.toLowerCase().trim();
 
@@ -196,23 +233,7 @@ export class AuthService {
   }
 
   async linkGoogleAccount(userId: string, idToken: string) {
-    let payload;
-    try {
-      const ticket = await this.googleOAuthClient.verifyIdToken({
-        idToken,
-        audience: [
-          process.env.GOOGLE_CLIENT_ID || '743020408271-ge3g4tooe22eb2m83vsek8iuvfedjhrj.apps.googleusercontent.com',
-        ],
-      });
-      payload = ticket.getPayload();
-    } catch {
-      throw new UnauthorizedException('Token do Google inválido');
-    }
-
-    if (!payload || !payload.email) {
-      throw new UnauthorizedException('Informações do Google incompletas');
-    }
-
+    const payload = await this.verifyGoogleToken(idToken);
     const { sub: googleId, email, picture } = payload;
     const cleanEmail = email.toLowerCase().trim();
 
