@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -11,6 +12,8 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UpdateUsernameDto } from './dto/update-username.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { OAuth2Client } from 'google-auth-library';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { User, UserDocument } from './schemas/user.schema';
 
@@ -40,7 +43,7 @@ export class AuthService {
   async login(dto: LoginDto) {
     const username = dto.username.trim().toLowerCase();
     const user = await this.userModel.findOne({ username }).select('+passwordHash');
-    if (!user) {
+    if (!user || !user.passwordHash) {
       throw new UnauthorizedException('Invalid credentials');
     }
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
@@ -80,8 +83,8 @@ export class AuthService {
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
     const user = await this.userModel.findById(userId).select('+passwordHash');
-    if (!user) {
-      throw new UnauthorizedException();
+    if (!user || !user.passwordHash) {
+      throw new UnauthorizedException('User does not have a local password');
     }
 
     const ok = await bcrypt.compare(dto.currentPassword, user.passwordHash);
@@ -90,6 +93,166 @@ export class AuthService {
     }
 
     user.passwordHash = await bcrypt.hash(dto.newPassword, SALT_ROUNDS);
+    await user.save();
+
+    return { ok: true };
+  }
+
+  private googleOAuthClient = new OAuth2Client(
+    process.env.GOOGLE_CLIENT_ID || '743020408271-ge3g4tooe22eb2m83vsek8iuvfedjhrj.apps.googleusercontent.com',
+  );
+
+  async googleLogin(dto: GoogleLoginDto) {
+    let payload;
+    try {
+      const ticket = await this.googleOAuthClient.verifyIdToken({
+        idToken: dto.idToken,
+        audience: [
+          process.env.GOOGLE_CLIENT_ID || '743020408271-ge3g4tooe22eb2m83vsek8iuvfedjhrj.apps.googleusercontent.com',
+        ],
+      });
+      payload = ticket.getPayload();
+    } catch (err) {
+      throw new UnauthorizedException('Token do Google inválido');
+    }
+
+    if (!payload || !payload.email) {
+      throw new UnauthorizedException('Informações do Google incompletas');
+    }
+
+    const { sub: googleId, email, name, picture } = payload;
+    const cleanEmail = email.toLowerCase().trim();
+
+    let user = await this.userModel.findOne({
+      $or: [{ googleId }, { email: cleanEmail }, { username: cleanEmail }],
+    });
+
+    if (!user) {
+      let baseUsername = cleanEmail.split('@')[0].replace(/[^a-z0-9_]/g, '');
+      if (baseUsername.length < 3) baseUsername = `user_${googleId.slice(0, 6)}`;
+
+      let username = baseUsername;
+      let count = 1;
+      while (await this.userModel.findOne({ username }).lean()) {
+        username = `${baseUsername}_${count}`;
+        count++;
+      }
+
+      user = await this.userModel.create({
+        username,
+        email: cleanEmail,
+        googleId,
+        avatarUrl: picture,
+      });
+    } else {
+      let updated = false;
+      if (!user.googleId) {
+        user.googleId = googleId;
+        updated = true;
+      }
+      if (!user.email) {
+        user.email = cleanEmail;
+        updated = true;
+      }
+      if (picture && !user.avatarUrl) {
+        user.avatarUrl = picture;
+        updated = true;
+      }
+      if (updated) {
+        await user.save();
+      }
+    }
+
+    const expiresIn = dto.remember ? '7d' : '1d';
+    const jwtPayload: JwtPayload = { sub: user._id.toString(), username: user.username };
+    const accessToken = await this.jwtService.signAsync(jwtPayload, { expiresIn });
+
+    return {
+      accessToken,
+      expiresIn,
+      user: {
+        id: user._id.toString(),
+        username: user.username,
+        email: user.email,
+        avatarUrl: user.avatarUrl,
+      },
+    };
+  }
+
+  async getUserProfile(userId: string) {
+    const user = await this.userModel.findById(userId).select('+passwordHash');
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    return {
+      id: user._id.toString(),
+      username: user.username,
+      email: user.email || null,
+      googleId: user.googleId || null,
+      avatarUrl: user.avatarUrl || null,
+      hasGoogleLinked: !!user.googleId,
+      hasPassword: !!user.passwordHash,
+    };
+  }
+
+  async linkGoogleAccount(userId: string, idToken: string) {
+    let payload;
+    try {
+      const ticket = await this.googleOAuthClient.verifyIdToken({
+        idToken,
+        audience: [
+          process.env.GOOGLE_CLIENT_ID || '743020408271-ge3g4tooe22eb2m83vsek8iuvfedjhrj.apps.googleusercontent.com',
+        ],
+      });
+      payload = ticket.getPayload();
+    } catch {
+      throw new UnauthorizedException('Token do Google inválido');
+    }
+
+    if (!payload || !payload.email) {
+      throw new UnauthorizedException('Informações do Google incompletas');
+    }
+
+    const { sub: googleId, email, picture } = payload;
+    const cleanEmail = email.toLowerCase().trim();
+
+    const existingOther = await this.userModel.findOne({
+      googleId,
+      _id: { $ne: userId },
+    });
+    if (existingOther) {
+      throw new ConflictException('Esta conta do Google já está vinculada a outro usuário');
+    }
+
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    user.googleId = googleId;
+    user.email = cleanEmail;
+    if (picture) user.avatarUrl = picture;
+    await user.save();
+
+    return {
+      ok: true,
+      googleId: user.googleId,
+      email: user.email,
+      avatarUrl: user.avatarUrl,
+    };
+  }
+
+  async unlinkGoogleAccount(userId: string) {
+    const user = await this.userModel.findById(userId).select('+passwordHash');
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    if (!user.passwordHash) {
+      throw new BadRequestException('Você não pode desvincular o Google sem ter uma senha definida');
+    }
+
+    user.googleId = undefined;
     await user.save();
 
     return { ok: true };
