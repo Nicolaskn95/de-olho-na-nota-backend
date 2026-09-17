@@ -6,7 +6,10 @@ import { CategoriaService } from './categoria.service'
 import { CategoriaSeed } from './categoria.seed'
 import { Categoria, CategoriaSchema } from './schemas/categoria.schema'
 import { Prefixo, PrefixoSchema } from './schemas/prefixo-categoria.schema'
-import { NotaFiscal, NotaFiscalSchema } from '../nota-fiscal/schemas/nota-fiscal.schema'
+import {
+  NotaFiscal,
+  NotaFiscalSchema,
+} from '../nota-fiscal/schemas/nota-fiscal.schema'
 import { Produto, ProdutoSchema } from '../nota-fiscal/schemas/produto.schema'
 import { DuracaoMediaModule } from '../duracao-media/duracao-media.module'
 

@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsString, MinLength, MaxLength, Matches } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  MinLength,
+  MaxLength,
+  Matches,
+} from 'class-validator'
 
 export class RegisterDto {
   @IsString()
@@ -8,11 +14,11 @@ export class RegisterDto {
   @Matches(/^[a-z0-9_]+$/i, {
     message: 'username must contain only letters, numbers and underscore',
   })
-  username: string;
+  username: string
 
   @IsString()
   @IsNotEmpty()
   @MinLength(6)
   @MaxLength(128)
-  password: string;
+  password: string
 }

@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common'
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+} from '@nestjs/common'
 import { ListaComprasService } from './lista-compras.service'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { UserId } from '../auth/decorators/user.decorator'
@@ -38,10 +47,7 @@ export class ListaComprasController {
   }
 
   @Patch('itens')
-  salvarItensEmLote(
-    @UserId() userId: string,
-    @Body() dto: SalvarItensLoteDto,
-  ) {
+  salvarItensEmLote(@UserId() userId: string, @Body() dto: SalvarItensLoteDto) {
     return this.listaComprasService.salvarItensEmLote(userId, dto)
   }
 
@@ -51,10 +57,7 @@ export class ListaComprasController {
   }
 
   @Post('item')
-  adicionarItem(
-    @UserId() userId: string,
-    @Body() dto: AdicionarItemDto,
-  ) {
+  adicionarItem(@UserId() userId: string, @Body() dto: AdicionarItemDto) {
     return this.listaComprasService.adicionarItem(userId, dto)
   }
 
@@ -64,10 +67,7 @@ export class ListaComprasController {
   }
 
   @Post('apelidos')
-  salvarApelido(
-    @UserId() userId: string,
-    @Body() dto: SalvarApelidoDto,
-  ) {
+  salvarApelido(@UserId() userId: string, @Body() dto: SalvarApelidoDto) {
     return this.listaComprasService.salvarApelido(userId, dto)
   }
 

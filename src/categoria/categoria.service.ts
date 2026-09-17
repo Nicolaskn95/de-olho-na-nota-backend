@@ -275,8 +275,12 @@ export class CategoriaService implements OnModuleInit {
       .select('prefixo')
       .exec()
 
-    const existentesSet = new Set(existentes.map((p) => p.prefixo.toUpperCase()))
-    const prefixosOrdenados = Array.from(existentesSet).sort((a, b) => b.length - a.length)
+    const existentesSet = new Set(
+      existentes.map((p) => p.prefixo.toUpperCase()),
+    )
+    const prefixosOrdenados = Array.from(existentesSet).sort(
+      (a, b) => b.length - a.length,
+    )
 
     // Filtrar apenas produtos que AINDA NÃO possuem classificação
     const produtosSemCategoria = produtosNomes.filter((nomeProd) => {
@@ -286,7 +290,9 @@ export class CategoriaService implements OnModuleInit {
     })
 
     if (produtosSemCategoria.length === 0) {
-      this.logger.log('Todos os produtos já possuem classificação. Nenhum novo prefixo inserido.')
+      this.logger.log(
+        'Todos os produtos já possuem classificação. Nenhum novo prefixo inserido.',
+      )
       return this.listarPrefixos(userId)
     }
 
@@ -305,7 +311,7 @@ export class CategoriaService implements OnModuleInit {
     for (const c of classificacoes) {
       const prefixoUpper = c.prefixo.toUpperCase().trim()
       const codigoCat = c.codigoCategoria.toUpperCase().trim()
-      const categoriaId = codigoMap.get(codigoCat) as Types.ObjectId | undefined
+      const categoriaId = codigoMap.get(codigoCat)
 
       if (!categoriaId || prefixoUpper.length < 2) continue
 
@@ -321,11 +327,12 @@ export class CategoriaService implements OnModuleInit {
 
     // Inserção em lote (insertMany) dos novos prefixos gerados pela IA
     if (novosPrefixosDocs.length > 0) {
-      this.logger.log(`Inserindo ${novosPrefixosDocs.length} novos prefixos via insertMany...`)
+      this.logger.log(
+        `Inserindo ${novosPrefixosDocs.length} novos prefixos via insertMany...`,
+      )
       await this.prefixoModel.insertMany(novosPrefixosDocs, { ordered: false })
     }
 
     return this.listarPrefixos(userId)
   }
 }
-

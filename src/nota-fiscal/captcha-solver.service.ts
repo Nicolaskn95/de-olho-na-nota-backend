@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
-import axios from 'axios';
-import sharp from 'sharp';
+import { Injectable, Logger } from '@nestjs/common'
+import axios from 'axios'
+import sharp from 'sharp'
 
 /**
  * Serviço responsável por baixar e resolver CAPTCHAs da NFCe SP
@@ -8,7 +8,7 @@ import sharp from 'sharp';
  */
 @Injectable()
 export class CaptchaSolverService {
-  private readonly logger = new Logger(CaptchaSolverService.name);
+  private readonly logger = new Logger(CaptchaSolverService.name)
 
   /**
    * Baixa a imagem do CAPTCHA do servidor NFCe SP,
@@ -18,10 +18,7 @@ export class CaptchaSolverService {
    * @param cookies Cookies da sessão para manter a mesma sessão
    * @returns Texto reconhecido do CAPTCHA
    */
-  async resolverCaptcha(
-    captchaUrl: string,
-    cookies: string,
-  ): Promise<string> {
+  async resolverCaptcha(captchaUrl: string, cookies: string): Promise<string> {
     // 1. Baixar a imagem do CAPTCHA
     const imageResponse = await axios.get(captchaUrl, {
       responseType: 'arraybuffer',
@@ -33,17 +30,17 @@ export class CaptchaSolverService {
           'https://www.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaPublica.aspx',
       },
       timeout: 10000,
-    });
+    })
 
-    const imageBuffer = Buffer.from(imageResponse.data as ArrayBuffer);
+    const imageBuffer = Buffer.from(imageResponse.data as ArrayBuffer)
 
     // 2. Pré-processar a imagem para melhorar o OCR
-    const processedBuffer = await this.preprocessImage(imageBuffer);
+    const processedBuffer = await this.preprocessImage(imageBuffer)
 
     // 3. Executar OCR com Tesseract
-    const text = await this.executarOcr(processedBuffer);
+    const text = await this.executarOcr(processedBuffer)
 
-    return text;
+    return text
   }
 
   /**
@@ -65,14 +62,14 @@ export class CaptchaSolverService {
         .threshold(128)
         .negate()
         .png()
-        .toBuffer();
+        .toBuffer()
 
-      return processed;
+      return processed
     } catch (error) {
       this.logger.warn(
         `Falha no pré-processamento, usando imagem original: ${error instanceof Error ? error.message : 'erro'}`,
-      );
-      return imageBuffer;
+      )
+      return imageBuffer
     }
   }
 
@@ -81,8 +78,8 @@ export class CaptchaSolverService {
    */
   private async executarOcr(imageBuffer: Buffer): Promise<string> {
     // Dynamic import para ESM compatibilidade com tesseract.js v7
-    const Tesseract = await import('tesseract.js');
-    const worker = await Tesseract.createWorker('eng');
+    const Tesseract = await import('tesseract.js')
+    const worker = await Tesseract.createWorker('eng')
 
     try {
       // Configurações otimizadas para CAPTCHA alfanumérico
@@ -90,20 +87,22 @@ export class CaptchaSolverService {
         tessedit_char_whitelist:
           'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
         tessedit_pageseg_mode: '7' as unknown as Tesseract.PSM, // Single text line
-      });
+      })
 
       const {
         data: { text },
-      } = await worker.recognize(imageBuffer);
+      } = await worker.recognize(imageBuffer)
 
       // Limpa o texto: remove espaços e caracteres inválidos
-      const cleaned = text.replace(/[^A-Za-z0-9]/g, '').trim();
+      const cleaned = text.replace(/[^A-Za-z0-9]/g, '').trim()
 
-      this.logger.debug(`CAPTCHA reconhecido: "${cleaned}" (raw: "${text.trim()}")`);
+      this.logger.debug(
+        `CAPTCHA reconhecido: "${cleaned}" (raw: "${text.trim()}")`,
+      )
 
-      return cleaned;
+      return cleaned
     } finally {
-      await worker.terminate();
+      await worker.terminate()
     }
   }
 }

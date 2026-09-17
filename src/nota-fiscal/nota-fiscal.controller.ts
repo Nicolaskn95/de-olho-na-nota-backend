@@ -31,10 +31,7 @@ export class NotaFiscalController {
     @Body() dto: ProcessarChaveAcessoDto,
     @UserId() userId: string,
   ) {
-    return this.notaFiscalService.processarChaveAcesso(
-      dto.chaveAcesso,
-      userId,
-    )
+    return this.notaFiscalService.processarChaveAcesso(dto.chaveAcesso, userId)
   }
 
   @Get()

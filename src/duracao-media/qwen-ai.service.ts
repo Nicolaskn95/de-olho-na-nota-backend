@@ -71,7 +71,11 @@ export class QwenAiService {
 
     if (!apiKey) {
       this.logger.warn('QWEN_API_KEY não configurada. Usando estimativa local.')
-      return this.calcularFallbackLocal(itens, qtdMeses, 'Chave de API não configurada')
+      return this.calcularFallbackLocal(
+        itens,
+        qtdMeses,
+        'Chave de API não configurada',
+      )
     }
 
     try {
@@ -160,7 +164,8 @@ Instruções:
       return {
         duracaoMediaDias: Number(parsed.duracaoMediaDias) || 0,
         confianca: parsed.confianca || 'Média',
-        resumoIa: parsed.resumoIa || 'Análise concluída com base no seu histórico.',
+        resumoIa:
+          parsed.resumoIa || 'Análise concluída com base no seu histórico.',
         insights: Array.isArray(parsed.insights) ? parsed.insights : [],
         previsaoProximaCompra: parsed.previsaoProximaCompra || '',
         detalhesProdutos: Array.isArray(parsed.detalhesProdutos)
@@ -204,7 +209,11 @@ Instruções:
       previsaoDate.setDate(previsaoDate.getDate() + (mediaDiasItem || 30))
 
       const confianca: 'Alta' | 'Média' | 'Baixa' =
-        item.comprasCount >= 3 ? 'Alta' : item.comprasCount === 2 ? 'Média' : 'Baixa'
+        item.comprasCount >= 3
+          ? 'Alta'
+          : item.comprasCount === 2
+            ? 'Média'
+            : 'Baixa'
 
       const qtdTotal = item.quantidadeTotal || 1
       const consumoDiario = (qtdTotal / Math.max(1, mediaDiasItem)).toFixed(2)
@@ -344,8 +353,12 @@ Instruções:
       if (Array.isArray(parsed)) {
         return parsed.map((item: any) => ({
           produto: item.produto || '',
-          prefixo: String(item.prefixo || '').toUpperCase().trim(),
-          codigoCategoria: String(item.codigoCategoria || '').toUpperCase().trim(),
+          prefixo: String(item.prefixo || '')
+            .toUpperCase()
+            .trim(),
+          codigoCategoria: String(item.codigoCategoria || '')
+            .toUpperCase()
+            .trim(),
         }))
       }
 
@@ -362,7 +375,9 @@ Instruções:
     produtos: string[],
     categorias: CategoriaDisponivel[],
   ): ResultadoClassificacaoItem[] {
-    const codigosExistentes = new Set(categorias.map((c) => c.codigo.toUpperCase()))
+    const codigosExistentes = new Set(
+      categorias.map((c) => c.codigo.toUpperCase()),
+    )
 
     return produtos.map((prod) => {
       const prodUpper = prod.toUpperCase().trim()
@@ -453,4 +468,3 @@ Instruções:
     })
   }
 }
-

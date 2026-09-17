@@ -15,11 +15,15 @@ import { SalvarItensLoteDto } from './dto/salvar-itens-lote.dto'
 @Injectable()
 export class ListaComprasService {
   constructor(
-    @InjectModel(ListaCompras.name) private readonly listaComprasModel: Model<ListaCompras>,
-    @InjectModel(ProdutoApelido.name) private readonly produtoApelidoModel: Model<ProdutoApelido>,
-    @InjectModel(NotaFiscal.name) private readonly notaFiscalModel: Model<NotaFiscal>,
+    @InjectModel(ListaCompras.name)
+    private readonly listaComprasModel: Model<ListaCompras>,
+    @InjectModel(ProdutoApelido.name)
+    private readonly produtoApelidoModel: Model<ProdutoApelido>,
+    @InjectModel(NotaFiscal.name)
+    private readonly notaFiscalModel: Model<NotaFiscal>,
     @InjectModel(Produto.name) private readonly produtoModel: Model<Produto>,
-    @InjectModel(EstabelecimentoUsuario.name) private readonly estabelecimentoUsuarioModel: Model<EstabelecimentoUsuario>,
+    @InjectModel(EstabelecimentoUsuario.name)
+    private readonly estabelecimentoUsuarioModel: Model<EstabelecimentoUsuario>,
   ) {}
 
   private userFilter(userId: string) {
@@ -36,10 +40,10 @@ export class ListaComprasService {
           totalNotas: { $sum: 1 },
           meses: {
             $addToSet: {
-              $dateToString: { format: '%Y-%m', date: '$dataEmissao' }
-            }
-          }
-        }
+              $dateToString: { format: '%Y-%m', date: '$dataEmissao' },
+            },
+          },
+        },
       },
       {
         $project: {
@@ -47,17 +51,20 @@ export class ListaComprasService {
           nomeOriginal: 1,
           totalNotas: 1,
           mesesDisponiveis: { $size: '$meses' },
-          _id: 0
-        }
-      }
+          _id: 0,
+        },
+      },
     ])
 
-    const estabelecimentosUsuarios = await this.estabelecimentoUsuarioModel.find(this.userFilter(userId))
-    const deParaMap = new Map(estabelecimentosUsuarios.map(eu => [eu.cnpj, eu.nomeDepara]))
+    const estabelecimentosUsuarios =
+      await this.estabelecimentoUsuarioModel.find(this.userFilter(userId))
+    const deParaMap = new Map(
+      estabelecimentosUsuarios.map((eu) => [eu.cnpj, eu.nomeDepara]),
+    )
 
-    return notas.map(n => ({
+    return notas.map((n) => ({
       ...n,
-      nomeDepara: deParaMap.get(n.cnpj) || null
+      nomeDepara: deParaMap.get(n.cnpj) || null,
     }))
   }
 
@@ -67,21 +74,23 @@ export class ListaComprasService {
     const dataInicio = new Date()
     dataInicio.setMonth(dataInicio.getMonth() - periodoMeses)
 
-    const notas = await this.notaFiscalModel.find({
-      ...this.userFilter(userId),
-      cnpj: dto.cnpj,
-      dataEmissao: { $gte: dataInicio, $lte: dataFim }
-    }).populate({ path: 'produtos', model: Produto.name })
+    const notas = await this.notaFiscalModel
+      .find({
+        ...this.userFilter(userId),
+        cnpj: dto.cnpj,
+        dataEmissao: { $gte: dataInicio, $lte: dataFim },
+      })
+      .populate({ path: 'produtos', model: Produto.name })
 
-    const produtosPlanos = notas.flatMap(nota => 
-      ((nota.produtos || []) as any[]).map(produto => ({
+    const produtosPlanos = notas.flatMap((nota) =>
+      ((nota.produtos || []) as any[]).map((produto) => ({
         produto,
-        dataEmissao: nota.dataEmissao
-      }))
+        dataEmissao: nota.dataEmissao,
+      })),
     )
 
-    const grupos = new Map<string, Array<{ produto: any, dataEmissao: Date }>>()
-    
+    const grupos = new Map<string, Array<{ produto: any; dataEmissao: Date }>>()
+
     for (const item of produtosPlanos) {
       if (!item.produto || !item.produto.nome) continue
       const nomeChave = item.produto.nome.toUpperCase().trim()
@@ -89,30 +98,39 @@ export class ListaComprasService {
       grupos.get(nomeChave)!.push(item)
     }
 
-    const apelidos = await this.produtoApelidoModel.find(this.userFilter(userId))
-    const apelidoMap = new Map(apelidos.map(a => [a.nomeOriginal.toUpperCase().trim(), a.apelido]))
+    const apelidos = await this.produtoApelidoModel.find(
+      this.userFilter(userId),
+    )
+    const apelidoMap = new Map(
+      apelidos.map((a) => [a.nomeOriginal.toUpperCase().trim(), a.apelido]),
+    )
 
     const itensFiltrados = []
-    
+
     for (const [nomeChave, itens] of grupos.entries()) {
       const mesesDistintos = new Set(
-        itens.map(i => {
+        itens.map((i) => {
           const d = new Date(i.dataEmissao)
           return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-        })
+        }),
       )
-      
+
       const frequencia = mesesDistintos.size
       if (frequencia < 2) continue
 
-      const quantidadeTotal = itens.reduce((sum, i) => sum + i.produto.quantidade, 0)
+      const quantidadeTotal = itens.reduce(
+        (sum, i) => sum + i.produto.quantidade,
+        0,
+      )
       const mediaQuantidade = Math.ceil(quantidadeTotal / frequencia)
 
-      const itensOrdenados = [...itens].sort((a, b) => 
-        b.dataEmissao.getTime() - a.dataEmissao.getTime()
+      const itensOrdenados = [...itens].sort(
+        (a, b) => b.dataEmissao.getTime() - a.dataEmissao.getTime(),
       )
       const maisRecente = itensOrdenados[0].produto
-      const valorUnitarioRecente = maisRecente.valorUnitario || (maisRecente.valorTotal / maisRecente.quantidade)
+      const valorUnitarioRecente =
+        maisRecente.valorUnitario ||
+        maisRecente.valorTotal / maisRecente.quantidade
 
       const nomeExibicao = apelidoMap.get(nomeChave) || maisRecente.nome
       const valorEstimado = mediaQuantidade * valorUnitarioRecente
@@ -125,7 +143,7 @@ export class ListaComprasService {
         valorEstimado,
         valorUnitarioRecente,
         frequencia,
-        comprado: false
+        comprado: false,
       })
     }
 
@@ -134,14 +152,18 @@ export class ListaComprasService {
       return a.nome.localeCompare(b.nome)
     })
 
-    const estimativaTotal = itensFiltrados.reduce((sum, i) => sum + i.valorEstimado, 0)
+    const estimativaTotal = itensFiltrados.reduce(
+      (sum, i) => sum + i.valorEstimado,
+      0,
+    )
 
     let nomeEstabelecimento = 'Estabelecimento Desconhecido'
-    const estabelecimentoUsuario = await this.estabelecimentoUsuarioModel.findOne({
-      ...this.userFilter(userId),
-      cnpj: dto.cnpj
-    })
-    
+    const estabelecimentoUsuario =
+      await this.estabelecimentoUsuarioModel.findOne({
+        ...this.userFilter(userId),
+        cnpj: dto.cnpj,
+      })
+
     if (estabelecimentoUsuario?.nomeDepara) {
       nomeEstabelecimento = estabelecimentoUsuario.nomeDepara
     } else if (notas.length > 0) {
@@ -156,9 +178,9 @@ export class ListaComprasService {
         nomeEstabelecimento,
         periodoAnaliseMeses: periodoMeses,
         estimativaTotal,
-        itens: itensFiltrados
+        itens: itensFiltrados,
       },
-      { upsert: true, new: true }
+      { upsert: true, new: true },
     )
 
     return listaDocs
@@ -175,22 +197,25 @@ export class ListaComprasService {
     const lista = await this.listaComprasModel.findOneAndUpdate(
       this.userFilter(userId),
       { $set: { [field]: dto.comprado } },
-      { new: true }
+      { new: true },
     )
     if (!lista) throw new NotFoundException('Lista não encontrada')
     return lista
   }
 
   async salvarItensEmLote(userId: string, dto: SalvarItensLoteDto) {
-    const updateQuery = dto.itens.reduce<Record<string, boolean>>((acc, item) => {
-      acc[`itens.${item.index}.comprado`] = item.comprado
-      return acc
-    }, {})
+    const updateQuery = dto.itens.reduce<Record<string, boolean>>(
+      (acc, item) => {
+        acc[`itens.${item.index}.comprado`] = item.comprado
+        return acc
+      },
+      {},
+    )
 
     const lista = await this.listaComprasModel.findOneAndUpdate(
       this.userFilter(userId),
       { $set: updateQuery },
-      { new: true }
+      { new: true },
     )
     if (!lista) throw new NotFoundException('Lista não encontrada')
     return lista
@@ -199,54 +224,60 @@ export class ListaComprasService {
   async removerItem(userId: string, index: number) {
     // Unset first, then pull null to remove item at index
     const field = `itens.${index}`
-    await this.listaComprasModel.updateOne(
-      this.userFilter(userId),
-      { $unset: { [field]: 1 } }
-    )
+    await this.listaComprasModel.updateOne(this.userFilter(userId), {
+      $unset: { [field]: 1 },
+    })
     const lista = await this.listaComprasModel.findOneAndUpdate(
       this.userFilter(userId),
       { $pull: { itens: null } },
-      { new: true }
+      { new: true },
     )
     if (!lista) throw new NotFoundException('Lista não encontrada')
-    
+
     // Recalculate estimativaTotal
-    const estimativaTotal = lista.itens.reduce((sum, item) => sum + item.valorEstimado, 0)
+    const estimativaTotal = lista.itens.reduce(
+      (sum, item) => sum + item.valorEstimado,
+      0,
+    )
     lista.estimativaTotal = estimativaTotal
     await lista.save()
-    
+
     return lista
   }
 
   async adicionarItem(userId: string, dto: AdicionarItemDto) {
     const valorEstimado = dto.valorEstimado || 0
-    
+
     const newItem = {
       nome: dto.nome,
       nomeOriginal: dto.nome,
       quantidade: dto.quantidade,
       unidade: dto.unidade,
       valorEstimado,
-      valorUnitarioRecente: valorEstimado > 0 ? (valorEstimado / dto.quantidade) : 0,
+      valorUnitarioRecente:
+        valorEstimado > 0 ? valorEstimado / dto.quantidade : 0,
       frequencia: 1, // default para item manual
-      comprado: false
+      comprado: false,
     }
 
     const lista = await this.listaComprasModel.findOneAndUpdate(
       this.userFilter(userId),
-      { 
+      {
         $push: { itens: newItem },
-        $inc: { estimativaTotal: valorEstimado }
+        $inc: { estimativaTotal: valorEstimado },
       },
-      { new: true }
+      { new: true },
     )
     if (!lista) throw new NotFoundException('Lista não encontrada')
     return lista
   }
 
   async excluirLista(userId: string) {
-    const result = await this.listaComprasModel.deleteOne(this.userFilter(userId))
-    if (result.deletedCount === 0) throw new NotFoundException('Lista não encontrada')
+    const result = await this.listaComprasModel.deleteOne(
+      this.userFilter(userId),
+    )
+    if (result.deletedCount === 0)
+      throw new NotFoundException('Lista não encontrada')
     return { success: true }
   }
 
@@ -256,23 +287,26 @@ export class ListaComprasService {
       {
         userId: new Types.ObjectId(userId),
         nomeOriginal: dto.nomeOriginal,
-        apelido: dto.apelido
+        apelido: dto.apelido,
       },
-      { upsert: true, new: true }
+      { upsert: true, new: true },
     )
     return result
   }
 
   async listarApelidos(userId: string) {
-    return this.produtoApelidoModel.find(this.userFilter(userId)).sort({ nomeOriginal: 1 })
+    return this.produtoApelidoModel
+      .find(this.userFilter(userId))
+      .sort({ nomeOriginal: 1 })
   }
 
   async removerApelido(userId: string, id: string) {
     const result = await this.produtoApelidoModel.deleteOne({
       _id: new Types.ObjectId(id),
-      ...this.userFilter(userId)
+      ...this.userFilter(userId),
     })
-    if (result.deletedCount === 0) throw new NotFoundException('Apelido não encontrado')
+    if (result.deletedCount === 0)
+      throw new NotFoundException('Apelido não encontrado')
     return { success: true }
   }
 }

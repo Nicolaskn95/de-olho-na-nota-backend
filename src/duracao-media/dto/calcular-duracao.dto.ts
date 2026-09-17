@@ -1,4 +1,11 @@
-import { IsArray, ArrayMinSize, IsString, IsNumber, Min, Max } from 'class-validator'
+import {
+  IsArray,
+  ArrayMinSize,
+  IsString,
+  IsNumber,
+  Min,
+  Max,
+} from 'class-validator'
 
 export class CalcularDuracaoDto {
   @IsArray()

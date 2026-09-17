@@ -1,4 +1,10 @@
-import { IsArray, ValidateNested, IsNumber, IsBoolean, Min } from 'class-validator'
+import {
+  IsArray,
+  ValidateNested,
+  IsNumber,
+  IsBoolean,
+  Min,
+} from 'class-validator'
 import { Type } from 'class-transformer'
 
 export class ItemLoteDto {

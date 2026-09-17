@@ -3,21 +3,21 @@ import {
   ConflictException,
   Injectable,
   UnauthorizedException,
-} from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { InjectModel } from '@nestjs/mongoose';
-import * as bcrypt from 'bcrypt';
-import { Model } from 'mongoose';
-import { LoginDto } from './dto/login.dto';
-import { RegisterDto } from './dto/register.dto';
-import { UpdateUsernameDto } from './dto/update-username.dto';
-import { ChangePasswordDto } from './dto/change-password.dto';
-import { OAuth2Client } from 'google-auth-library';
-import { GoogleLoginDto } from './dto/google-login.dto';
-import { JwtPayload } from './strategies/jwt.strategy';
-import { User, UserDocument } from './schemas/user.schema';
+} from '@nestjs/common'
+import { JwtService } from '@nestjs/jwt'
+import { InjectModel } from '@nestjs/mongoose'
+import * as bcrypt from 'bcrypt'
+import { Model } from 'mongoose'
+import { LoginDto } from './dto/login.dto'
+import { RegisterDto } from './dto/register.dto'
+import { UpdateUsernameDto } from './dto/update-username.dto'
+import { ChangePasswordDto } from './dto/change-password.dto'
+import { OAuth2Client } from 'google-auth-library'
+import { GoogleLoginDto } from './dto/google-login.dto'
+import { JwtPayload } from './strategies/jwt.strategy'
+import { User, UserDocument } from './schemas/user.schema'
 
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 10
 
 @Injectable()
 export class AuthService {
@@ -27,108 +27,117 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
-    const username = dto.username.trim().toLowerCase();
-    const existing = await this.userModel.findOne({ username }).lean();
+    const username = dto.username.trim().toLowerCase()
+    const existing = await this.userModel.findOne({ username }).lean()
     if (existing) {
-      throw new ConflictException('Username already in use');
+      throw new ConflictException('Username already in use')
     }
-    const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
-    const user = await this.userModel.create({ username, passwordHash });
+    const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS)
+    const user = await this.userModel.create({ username, passwordHash })
     return {
       id: user._id.toString(),
       username: user.username,
-    };
+    }
   }
 
   async login(dto: LoginDto) {
-    const username = dto.username.trim().toLowerCase();
-    const user = await this.userModel.findOne({ username }).select('+passwordHash');
+    const username = dto.username.trim().toLowerCase()
+    const user = await this.userModel
+      .findOne({ username })
+      .select('+passwordHash')
     if (!user || !user.passwordHash) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Invalid credentials')
     }
-    const ok = await bcrypt.compare(dto.password, user.passwordHash);
+    const ok = await bcrypt.compare(dto.password, user.passwordHash)
     if (!ok) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Invalid credentials')
     }
-    const expiresIn = dto.remember ? '7d' : '1d';
-    const payload: JwtPayload = { sub: user._id.toString(), username: user.username };
-    const accessToken = await this.jwtService.signAsync(payload, { expiresIn });
+    const expiresIn = dto.remember ? '7d' : '1d'
+    const payload: JwtPayload = {
+      sub: user._id.toString(),
+      username: user.username,
+    }
+    const accessToken = await this.jwtService.signAsync(payload, { expiresIn })
     return {
       accessToken,
       expiresIn,
       user: { id: user._id.toString(), username: user.username },
-    };
+    }
   }
 
   async updateUsername(userId: string, dto: UpdateUsernameDto) {
-    const username = dto.username.trim().toLowerCase();
+    const username = dto.username.trim().toLowerCase()
 
     const existing = await this.userModel
       .findOne({ username, _id: { $ne: userId } })
-      .lean();
+      .lean()
     if (existing) {
-      throw new ConflictException('Username already in use');
+      throw new ConflictException('Username already in use')
     }
 
-    const user = await this.userModel.findById(userId);
+    const user = await this.userModel.findById(userId)
     if (!user) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException()
     }
 
-    user.username = username;
-    await user.save();
+    user.username = username
+    await user.save()
 
-    return { id: user._id.toString(), username: user.username };
+    return { id: user._id.toString(), username: user.username }
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
-    const user = await this.userModel.findById(userId).select('+passwordHash');
+    const user = await this.userModel.findById(userId).select('+passwordHash')
     if (!user || !user.passwordHash) {
-      throw new UnauthorizedException('User does not have a local password');
+      throw new UnauthorizedException('User does not have a local password')
     }
 
-    const ok = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    const ok = await bcrypt.compare(dto.currentPassword, user.passwordHash)
     if (!ok) {
-      throw new UnauthorizedException('Current password is invalid');
+      throw new UnauthorizedException('Current password is invalid')
     }
 
-    user.passwordHash = await bcrypt.hash(dto.newPassword, SALT_ROUNDS);
-    await user.save();
+    user.passwordHash = await bcrypt.hash(dto.newPassword, SALT_ROUNDS)
+    await user.save()
 
-    return { ok: true };
+    return { ok: true }
   }
 
   private googleOAuthClient = new OAuth2Client(
-    process.env.GOOGLE_CLIENT_ID || '743020408271-ge3g4tooe22eb2m83vsek8iuvfedjhrj.apps.googleusercontent.com',
-  );
+    process.env.GOOGLE_CLIENT_ID ||
+      '743020408271-ge3g4tooe22eb2m83vsek8iuvfedjhrj.apps.googleusercontent.com',
+  )
 
   private async verifyGoogleToken(token: string): Promise<{
-    sub: string;
-    email: string;
-    name?: string;
-    picture?: string;
+    sub: string
+    email: string
+    name?: string
+    picture?: string
   }> {
     if (token.startsWith('ya29.')) {
       try {
-        const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const res = await fetch(
+          'https://www.googleapis.com/oauth2/v3/userinfo',
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        )
         if (!res.ok) {
-          throw new Error('Falha na requisição userinfo do Google');
+          throw new Error('Falha na requisição userinfo do Google')
         }
-        const userInfo = await res.json();
+        const userInfo = await res.json()
         if (!userInfo || !userInfo.sub || !userInfo.email) {
-          throw new UnauthorizedException('Informações do Google incompletas');
+          throw new UnauthorizedException('Informações do Google incompletas')
         }
         return {
           sub: userInfo.sub,
           email: userInfo.email,
           name: userInfo.name,
           picture: userInfo.picture,
-        };
+        }
       } catch (err) {
-        if (err instanceof UnauthorizedException) throw err;
-        throw new UnauthorizedException('Token do Google inválido');
+        if (err instanceof UnauthorizedException) throw err
+        throw new UnauthorizedException('Token do Google inválido')
       }
     }
 
@@ -136,43 +145,44 @@ export class AuthService {
       const ticket = await this.googleOAuthClient.verifyIdToken({
         idToken: token,
         audience: [
-          process.env.GOOGLE_CLIENT_ID || '743020408271-ge3g4tooe22eb2m83vsek8iuvfedjhrj.apps.googleusercontent.com',
+          process.env.GOOGLE_CLIENT_ID ||
+            '743020408271-ge3g4tooe22eb2m83vsek8iuvfedjhrj.apps.googleusercontent.com',
         ],
-      });
-      const payload = ticket.getPayload();
+      })
+      const payload = ticket.getPayload()
       if (!payload || !payload.sub || !payload.email) {
-        throw new UnauthorizedException('Informações do Google incompletas');
+        throw new UnauthorizedException('Informações do Google incompletas')
       }
       return {
         sub: payload.sub,
         email: payload.email,
         name: payload.name,
         picture: payload.picture,
-      };
+      }
     } catch (err) {
-      if (err instanceof UnauthorizedException) throw err;
-      throw new UnauthorizedException('Token do Google inválido');
+      if (err instanceof UnauthorizedException) throw err
+      throw new UnauthorizedException('Token do Google inválido')
     }
   }
 
   async googleLogin(dto: GoogleLoginDto) {
-    const payload = await this.verifyGoogleToken(dto.idToken);
-    const { sub: googleId, email, name, picture } = payload;
-    const cleanEmail = email.toLowerCase().trim();
+    const payload = await this.verifyGoogleToken(dto.idToken)
+    const { sub: googleId, email, name, picture } = payload
+    const cleanEmail = email.toLowerCase().trim()
 
     let user = await this.userModel.findOne({
       $or: [{ googleId }, { email: cleanEmail }, { username: cleanEmail }],
-    });
+    })
 
     if (!user) {
-      let baseUsername = cleanEmail.split('@')[0].replace(/[^a-z0-9_]/g, '');
-      if (baseUsername.length < 3) baseUsername = `user_${googleId.slice(0, 6)}`;
+      let baseUsername = cleanEmail.split('@')[0].replace(/[^a-z0-9_]/g, '')
+      if (baseUsername.length < 3) baseUsername = `user_${googleId.slice(0, 6)}`
 
-      let username = baseUsername;
-      let count = 1;
+      let username = baseUsername
+      let count = 1
       while (await this.userModel.findOne({ username }).lean()) {
-        username = `${baseUsername}_${count}`;
-        count++;
+        username = `${baseUsername}_${count}`
+        count++
       }
 
       user = await this.userModel.create({
@@ -180,29 +190,34 @@ export class AuthService {
         email: cleanEmail,
         googleId,
         avatarUrl: picture,
-      });
+      })
     } else {
-      let updated = false;
+      let updated = false
       if (!user.googleId) {
-        user.googleId = googleId;
-        updated = true;
+        user.googleId = googleId
+        updated = true
       }
       if (!user.email) {
-        user.email = cleanEmail;
-        updated = true;
+        user.email = cleanEmail
+        updated = true
       }
       if (picture && !user.avatarUrl) {
-        user.avatarUrl = picture;
-        updated = true;
+        user.avatarUrl = picture
+        updated = true
       }
       if (updated) {
-        await user.save();
+        await user.save()
       }
     }
 
-    const expiresIn = dto.remember ? '7d' : '1d';
-    const jwtPayload: JwtPayload = { sub: user._id.toString(), username: user.username };
-    const accessToken = await this.jwtService.signAsync(jwtPayload, { expiresIn });
+    const expiresIn = dto.remember ? '7d' : '1d'
+    const jwtPayload: JwtPayload = {
+      sub: user._id.toString(),
+      username: user.username,
+    }
+    const accessToken = await this.jwtService.signAsync(jwtPayload, {
+      expiresIn,
+    })
 
     return {
       accessToken,
@@ -213,13 +228,13 @@ export class AuthService {
         email: user.email,
         avatarUrl: user.avatarUrl,
       },
-    };
+    }
   }
 
   async getUserProfile(userId: string) {
-    const user = await this.userModel.findById(userId).select('+passwordHash');
+    const user = await this.userModel.findById(userId).select('+passwordHash')
     if (!user) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException()
     }
     return {
       id: user._id.toString(),
@@ -229,53 +244,57 @@ export class AuthService {
       avatarUrl: user.avatarUrl || null,
       hasGoogleLinked: !!user.googleId,
       hasPassword: !!user.passwordHash,
-    };
+    }
   }
 
   async linkGoogleAccount(userId: string, idToken: string) {
-    const payload = await this.verifyGoogleToken(idToken);
-    const { sub: googleId, email, picture } = payload;
-    const cleanEmail = email.toLowerCase().trim();
+    const payload = await this.verifyGoogleToken(idToken)
+    const { sub: googleId, email, picture } = payload
+    const cleanEmail = email.toLowerCase().trim()
 
     const existingOther = await this.userModel.findOne({
       googleId,
       _id: { $ne: userId },
-    });
+    })
     if (existingOther) {
-      throw new ConflictException('Esta conta do Google já está vinculada a outro usuário');
+      throw new ConflictException(
+        'Esta conta do Google já está vinculada a outro usuário',
+      )
     }
 
-    const user = await this.userModel.findById(userId);
+    const user = await this.userModel.findById(userId)
     if (!user) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException()
     }
 
-    user.googleId = googleId;
-    user.email = cleanEmail;
-    if (picture) user.avatarUrl = picture;
-    await user.save();
+    user.googleId = googleId
+    user.email = cleanEmail
+    if (picture) user.avatarUrl = picture
+    await user.save()
 
     return {
       ok: true,
       googleId: user.googleId,
       email: user.email,
       avatarUrl: user.avatarUrl,
-    };
+    }
   }
 
   async unlinkGoogleAccount(userId: string) {
-    const user = await this.userModel.findById(userId).select('+passwordHash');
+    const user = await this.userModel.findById(userId).select('+passwordHash')
     if (!user) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException()
     }
 
     if (!user.passwordHash) {
-      throw new BadRequestException('Você não pode desvincular o Google sem ter uma senha definida');
+      throw new BadRequestException(
+        'Você não pode desvincular o Google sem ter uma senha definida',
+      )
     }
 
-    user.googleId = undefined;
-    await user.save();
+    user.googleId = undefined
+    await user.save()
 
-    return { ok: true };
+    return { ok: true }
   }
 }

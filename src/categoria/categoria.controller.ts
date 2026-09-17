@@ -51,10 +51,7 @@ export class CategoriaController {
 
   @Post('prefixos/importar')
   @UseGuards(JwtAuthGuard)
-  importarPrefixos(
-    @UserId() userId: string,
-    @Body() dto: ImportarPrefixosDto,
-  ) {
+  importarPrefixos(@UserId() userId: string, @Body() dto: ImportarPrefixosDto) {
     return this.categoriaService.importarPrefixos(userId, dto)
   }
 

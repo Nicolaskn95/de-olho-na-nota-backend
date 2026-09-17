@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsString, MaxLength, MinLength, Matches } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  MaxLength,
+  MinLength,
+  Matches,
+} from 'class-validator'
 
 export class UpdateUsernameDto {
   @IsString()
@@ -8,6 +14,5 @@ export class UpdateUsernameDto {
   @Matches(/^[a-z0-9_]+$/i, {
     message: 'username must contain only letters, numbers and underscore',
   })
-  username: string;
+  username: string
 }
-

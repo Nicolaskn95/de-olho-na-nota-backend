@@ -52,20 +52,14 @@ export class DuracaoMediaService {
       const allUserPrefixos = await this.prefixoModel
         .find({ $or: [{ userId: this.toUserId(userId) }, { userId }] })
         .exec()
-      
-      const allPrefixos = await this.prefixoModel
-        .find({})
-        .limit(10)
-        .exec()
+
+      const allPrefixos = await this.prefixoModel.find({}).limit(10).exec()
 
       const allUserNotas = await this.notaFiscalModel
         .find({ $or: [{ userId: this.toUserId(userId) }, { userId }] })
         .exec()
 
-      const allNotas = await this.notaFiscalModel
-        .find({})
-        .limit(5)
-        .exec()
+      const allNotas = await this.notaFiscalModel.find({}).limit(5).exec()
 
       return {
         notasFiscais: [],
@@ -82,22 +76,22 @@ export class DuracaoMediaService {
           allUserPrefixos,
           allPrefixosSample: allPrefixos,
           allUserNotasCount: allUserNotas.length,
-          allUserNotasSample: allUserNotas.slice(0, 5).map(n => ({
+          allUserNotasSample: allUserNotas.slice(0, 5).map((n) => ({
             _id: n._id,
             userId: n.userId,
             dataEmissao: n.dataEmissao,
             dataEmissaoType: typeof n.dataEmissao,
-            isDateInstance: n.dataEmissao instanceof Date
+            isDateInstance: n.dataEmissao instanceof Date,
           })),
-          allNotasSample: allNotas.map(n => ({
+          allNotasSample: allNotas.map((n) => ({
             _id: n._id,
             userId: n.userId,
             dataEmissao: n.dataEmissao,
             dataEmissaoType: typeof n.dataEmissao,
-            isDateInstance: n.dataEmissao instanceof Date
+            isDateInstance: n.dataEmissao instanceof Date,
           })),
-          notasMapeadas: []
-        }
+          notasMapeadas: [],
+        },
       }
     }
 
@@ -123,13 +117,20 @@ export class DuracaoMediaService {
         }
 
         if (productDoc && typeof productDoc.nome === 'string') {
-          const nomeLimpo = productDoc.nome.replace(/\s+/g, ' ').trim().toUpperCase()
-          const SIGLAS = /^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MG|MS|MT|PA|PB|PR|PE|PI|RJ|RN|RO|RS|SC|SP|SE|TO)\s+/i
+          const nomeLimpo = productDoc.nome
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toUpperCase()
+          const SIGLAS =
+            /^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MG|MS|MT|PA|PB|PR|PE|PI|RJ|RN|RO|RS|SC|SP|SE|TO)\s+/i
           const nomeSemSigla = nomeLimpo.replace(SIGLAS, '').trim() || nomeLimpo
 
           const matches = prefixStrings.some((prefix) => {
             const prefixUpper = prefix.toUpperCase().trim()
-            return nomeLimpo.startsWith(prefixUpper) || nomeSemSigla.startsWith(prefixUpper)
+            return (
+              nomeLimpo.startsWith(prefixUpper) ||
+              nomeSemSigla.startsWith(prefixUpper)
+            )
           })
 
           if (matches) {
@@ -170,13 +171,15 @@ export class DuracaoMediaService {
           userId: n.userId,
           dataEmissao: n.dataEmissao,
           produtosCount: n.produtos ? n.produtos.length : 0,
-          produtos: n.produtos ? n.produtos.map((p: any) => ({
-            _id: p._id,
-            nome: p.nome,
-            hasNome: !!p.nome
-          })) : []
-        }))
-      }
+          produtos: n.produtos
+            ? n.produtos.map((p: any) => ({
+                _id: p._id,
+                nome: p.nome,
+                hasNome: !!p.nome,
+              }))
+            : [],
+        })),
+      },
     }
   }
 
@@ -194,9 +197,7 @@ export class DuracaoMediaService {
     const produtosComData: { nome: string; dataEmissao: Date }[] = []
 
     for (const produto of produtos) {
-      const nf = await this.notaFiscalModel
-        .findById(produto.notaFiscal)
-        .exec()
+      const nf = await this.notaFiscalModel.findById(produto.notaFiscal).exec()
 
       if (nf) {
         const dataEmissao =
@@ -204,7 +205,8 @@ export class DuracaoMediaService {
             ? nf.dataEmissao
             : new Date(nf.dataEmissao)
         const nomeLimpo = produto.nome.replace(/\s+/g, ' ').trim().toUpperCase()
-        const SIGLAS = /^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MG|MS|MT|PA|PB|PR|PE|PI|RJ|RN|RO|RS|SC|SP|SE|TO)\s+/i
+        const SIGLAS =
+          /^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MG|MS|MT|PA|PB|PR|PE|PI|RJ|RN|RO|RS|SC|SP|SE|TO)\s+/i
         const nomeSemSigla = nomeLimpo.replace(SIGLAS, '').trim() || nomeLimpo
 
         produtosComData.push({
@@ -285,9 +287,7 @@ export class DuracaoMediaService {
     >()
 
     for (const produto of produtos) {
-      const nf = await this.notaFiscalModel
-        .findById(produto.notaFiscal)
-        .exec()
+      const nf = await this.notaFiscalModel.findById(produto.notaFiscal).exec()
 
       if (nf) {
         const dataEmissao =
@@ -296,7 +296,8 @@ export class DuracaoMediaService {
             : new Date(nf.dataEmissao)
 
         const nomeLimpo = produto.nome.replace(/\s+/g, ' ').trim().toUpperCase()
-        const SIGLAS = /^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MG|MS|MT|PA|PB|PR|PE|PI|RJ|RN|RO|RS|SC|SP|SE|TO)\s+/i
+        const SIGLAS =
+          /^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MG|MS|MT|PA|PB|PR|PE|PI|RJ|RN|RO|RS|SC|SP|SE|TO)\s+/i
         const nomeSemSigla = nomeLimpo.replace(SIGLAS, '').trim() || nomeLimpo
 
         const existente = produtosAgrupados.get(nomeSemSigla) || {

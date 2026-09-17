@@ -1,9 +1,18 @@
-import { IsString, IsNotEmpty, IsNumber, Min, Max, Matches } from 'class-validator'
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  Min,
+  Max,
+  Matches,
+} from 'class-validator'
 
 export class FiltrarDuracaoDto {
   @IsString()
   @IsNotEmpty()
-  @Matches(/^\d{4}-\d{2}$/, { message: 'mesInicial deve estar no formato YYYY-MM' })
+  @Matches(/^\d{4}-\d{2}$/, {
+    message: 'mesInicial deve estar no formato YYYY-MM',
+  })
   mesInicial: string
 
   @IsString()
