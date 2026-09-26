@@ -10,6 +10,10 @@ export class NotaFiscal extends Document {
   @Prop({ required: true, index: true, type: Types.ObjectId, ref: 'User' })
   userId: Types.ObjectId
 
+  // ID do mercado global único por CNPJ
+  @Prop({ type: Types.ObjectId, ref: 'Mercado', required: false, index: true })
+  mercadoId?: Types.ObjectId
+
   @Prop({ required: true })
   numero: string
 

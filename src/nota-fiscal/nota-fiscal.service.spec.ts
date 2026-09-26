@@ -7,6 +7,7 @@ import { NotaFiscal } from './schemas/nota-fiscal.schema'
 import { Produto } from './schemas/produto.schema'
 import { EstabelecimentoUsuario } from './schemas/estabelecimento-usuario.schema'
 import { CaptchaSolverService } from './captcha-solver.service'
+import { MercadoService } from '../mercado/mercado.service'
 
 describe('NotaFiscalService', () => {
   let service: NotaFiscalService
@@ -14,6 +15,7 @@ describe('NotaFiscalService', () => {
   let mockProdutoModel: any
   let mockEstabelecimentoUsuarioModel: any
   let mockCaptchaSolverService: any
+  let mockMercadoService: any
 
   const validUserId = new Types.ObjectId().toString()
   const validNotaId = new Types.ObjectId().toString()
@@ -42,6 +44,14 @@ describe('NotaFiscalService', () => {
       resolverCaptcha: jest.fn(),
     }
 
+    mockMercadoService = {
+      processarUpsertMercado: jest.fn().mockResolvedValue({
+        _id: new Types.ObjectId(),
+      }),
+      buscarPorCnpj: jest.fn(),
+      buscarPorId: jest.fn(),
+    }
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         NotaFiscalService,
@@ -60,6 +70,10 @@ describe('NotaFiscalService', () => {
         {
           provide: CaptchaSolverService,
           useValue: mockCaptchaSolverService,
+        },
+        {
+          provide: MercadoService,
+          useValue: mockMercadoService,
         },
       ],
     }).compile()

@@ -10,10 +10,12 @@ import {
   EstabelecimentoUsuario,
   EstabelecimentoUsuarioSchema,
 } from './schemas/estabelecimento-usuario.schema'
+import { MercadoModule } from '../mercado/mercado.module'
 
 @Module({
   imports: [
     AuthModule,
+    MercadoModule,
     MongooseModule.forFeature([
       { name: NotaFiscal.name, schema: NotaFiscalSchema },
       { name: Produto.name, schema: ProdutoSchema },
