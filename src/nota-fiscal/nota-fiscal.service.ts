@@ -4,6 +4,7 @@ import {
   ConflictException,
   NotFoundException,
   Logger,
+  Optional,
 } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
@@ -14,6 +15,8 @@ import { Produto } from './schemas/produto.schema'
 import { EstabelecimentoUsuario } from './schemas/estabelecimento-usuario.schema'
 import { DadosNotaFiscal, ProdutoExtraido } from './interface/INotaFiscal'
 import { CaptchaSolverService } from './captcha-solver.service'
+import { HistoricoCompraService } from '../historico-compra/historico-compra.service'
+import { ProdutoCatalogoService } from '../produto-catalogo/produto-catalogo.service'
 
 /** Remove quebras de linha e múltiplos espaços */
 function normalizarTexto(val: string): string {
@@ -45,6 +48,10 @@ export class NotaFiscalService {
     @InjectModel(EstabelecimentoUsuario.name)
     private estabelecimentoUsuarioModel: Model<EstabelecimentoUsuario>,
     private readonly captchaSolverService: CaptchaSolverService,
+    @Optional()
+    private readonly historicoCompraService?: HistoricoCompraService,
+    @Optional()
+    private readonly produtoCatalogoService?: ProdutoCatalogoService,
   ) {}
 
   async processarUrl(url: string, userId: string): Promise<NotaFiscal> {
@@ -86,6 +93,16 @@ export class NotaFiscalService {
 
     nota.produtos = produtos.map((p) => p._id)
     await nota.save()
+
+    // Persiste também na coleção escalável HistoricoCompra (tabela pivô)
+    await this.salvarItensHistoricoCompra(
+      nota,
+      dados.produtos,
+      userObjectId,
+      dados.estabelecimento,
+      dados.cnpj,
+      dados.dataEmissao,
+    )
 
     return this.notaFiscalModel
       .findById(nota._id)
@@ -285,6 +302,16 @@ export class NotaFiscalService {
 
         nota.produtos = produtos.map((p) => p._id)
         await nota.save()
+
+        // Persiste também na coleção escalável HistoricoCompra (tabela pivô)
+        await this.salvarItensHistoricoCompra(
+          nota,
+          dados.produtos,
+          userObjectId,
+          dados.estabelecimento,
+          dados.cnpj,
+          dados.dataEmissao,
+        )
 
         this.logger.log(
           `Nota fiscal processada com sucesso via chave de acesso: ${chaveAcesso.substring(0, 10)}...`,
@@ -783,6 +810,88 @@ export class NotaFiscalService {
         duracaoMediaDias: d2.duracaoMediaDias,
         duracaoEntreComprasDias: d2.duracaoEntreComprasDias,
       },
+    }
+  }
+
+  /**
+   * Persiste os itens da nota fiscal na coleção HistoricoCompra (tabela pivô escalável).
+   * Executa de forma resiliente, registrando logs sem interromper o fluxo principal.
+   */
+  private async salvarItensHistoricoCompra(
+    nota: NotaFiscal,
+    produtosExtraidos: ProdutoExtraido[],
+    userId: Types.ObjectId,
+    estabelecimentoNome: string,
+    cnpj: string,
+    dataCompra: Date,
+  ): Promise<void> {
+    if (!this.historicoCompraService) {
+      return
+    }
+
+    try {
+      // 1. Obtém ou cria o estabelecimento de referência do usuário
+      const estabelecimento =
+        await this.estabelecimentoUsuarioModel.findOneAndUpdate(
+          { userId, cnpj },
+          {
+            $setOnInsert: {
+              userId,
+              cnpj,
+              nomeOriginal: estabelecimentoNome,
+              nomeDepara: estabelecimentoNome,
+            },
+          },
+          { upsert: true, new: true },
+        )
+
+      const mercadoId = estabelecimento._id as Types.ObjectId
+
+      // 2. Prepara os itens do histórico de compra mapeando catálogo se disponível
+      const itensHistorico = await Promise.all(
+        produtosExtraidos.map(async (p) => {
+          let produtoCatalogoId: Types.ObjectId | null = null
+
+          if (this.produtoCatalogoService) {
+            try {
+              const prodCat =
+                await this.produtoCatalogoService.processarItemCatalogo(
+                  p.codigo,
+                  p.nome,
+                )
+              if (prodCat) {
+                produtoCatalogoId = prodCat._id as Types.ObjectId
+              }
+            } catch {
+              // Silencia erros no catálogo global para não travar a persistência do histórico
+            }
+          }
+
+          return {
+            usuarioId: userId,
+            mercadoId,
+            notaFiscalId: nota._id as Types.ObjectId,
+            produtoCatalogoId,
+            codigoInternoMercado: p.codigo,
+            descricaoBrutaNota: p.nome,
+            quantidade: p.quantidade,
+            unidade: p.unidade,
+            precoUnitario: p.valorUnitario,
+            precoTotal: p.valorTotal,
+            dataCompra: dataCompra || new Date(),
+          }
+        }),
+      )
+
+      await this.historicoCompraService.registrarItensEmLote(itensHistorico)
+      this.logger.log(
+        `Registrados com sucesso ${itensHistorico.length} itens no HistoricoCompra para a nota fiscal ${String(nota._id)}`,
+      )
+    } catch (err: any) {
+      this.logger.error(
+        `Erro ao registrar itens no HistoricoCompra: ${err.message}`,
+        err.stack,
+      )
     }
   }
 }

@@ -11,9 +11,14 @@ import {
   EstabelecimentoUsuarioSchema,
 } from './schemas/estabelecimento-usuario.schema'
 
+import { HistoricoCompraModule } from '../historico-compra/historico-compra.module'
+import { ProdutoCatalogoModule } from '../produto-catalogo/produto-catalogo.module'
+
 @Module({
   imports: [
     AuthModule,
+    HistoricoCompraModule,
+    ProdutoCatalogoModule,
     MongooseModule.forFeature([
       { name: NotaFiscal.name, schema: NotaFiscalSchema },
       { name: Produto.name, schema: ProdutoSchema },
