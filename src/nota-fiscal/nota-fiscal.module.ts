@@ -10,6 +10,7 @@ import {
   EstabelecimentoUsuario,
   EstabelecimentoUsuarioSchema,
 } from './schemas/estabelecimento-usuario.schema'
+import { MercadoModule } from '../mercado/mercado.module'
 
 import { HistoricoCompraModule } from '../historico-compra/historico-compra.module'
 import { ProdutoCatalogoModule } from '../produto-catalogo/produto-catalogo.module'
@@ -17,6 +18,7 @@ import { ProdutoCatalogoModule } from '../produto-catalogo/produto-catalogo.modu
 @Module({
   imports: [
     AuthModule,
+    MercadoModule,
     HistoricoCompraModule,
     ProdutoCatalogoModule,
     MongooseModule.forFeature([

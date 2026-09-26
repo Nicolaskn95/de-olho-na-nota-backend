@@ -17,6 +17,8 @@ import { DadosNotaFiscal, ProdutoExtraido } from './interface/INotaFiscal'
 import { CaptchaSolverService } from './captcha-solver.service'
 import { HistoricoCompraService } from '../historico-compra/historico-compra.service'
 import { ProdutoCatalogoService } from '../produto-catalogo/produto-catalogo.service'
+import { MercadoService } from '../mercado/mercado.service'
+import { EnderecoMercadoDto } from '../mercado/dto/upsert-mercado.dto'
 
 /** Remove quebras de linha e múltiplos espaços */
 function normalizarTexto(val: string): string {
@@ -48,6 +50,7 @@ export class NotaFiscalService {
     @InjectModel(EstabelecimentoUsuario.name)
     private estabelecimentoUsuarioModel: Model<EstabelecimentoUsuario>,
     private readonly captchaSolverService: CaptchaSolverService,
+    private readonly mercadoService: MercadoService,
     @Optional()
     private readonly historicoCompraService?: HistoricoCompraService,
     @Optional()
@@ -75,8 +78,11 @@ export class NotaFiscalService {
       )
     }
 
+    const mercadoId = await this.obterOuCriarMercadoId(dados)
+
     const nota = new this.notaFiscalModel({
       ...dados,
+      mercadoId,
       estabelecimentoOriginal: dados.estabelecimento,
       urlOriginal: url,
       produtos: [],
@@ -283,9 +289,12 @@ export class NotaFiscalService {
           dados.chaveAcesso = chaveAcesso
         }
 
+        const mercadoId = await this.obterOuCriarMercadoId(dados)
+
         // 5. Salvar no MongoDB (mesmo fluxo do processarUrl)
         const nota = new this.notaFiscalModel({
           ...dados,
+          mercadoId,
           estabelecimentoOriginal: dados.estabelecimento,
           urlOriginal: `nfce:chave:${chaveAcesso}`,
           produtos: [],
@@ -845,7 +854,7 @@ export class NotaFiscalService {
           { upsert: true, new: true },
         )
 
-      const mercadoId = estabelecimento._id as Types.ObjectId
+      const mercadoId = estabelecimento._id
 
       // 2. Prepara os itens do histórico de compra mapeando catálogo se disponível
       const itensHistorico = await Promise.all(
@@ -860,7 +869,7 @@ export class NotaFiscalService {
                   p.nome,
                 )
               if (prodCat) {
-                produtoCatalogoId = prodCat._id as Types.ObjectId
+                produtoCatalogoId = prodCat._id
               }
             } catch {
               // Silencia erros no catálogo global para não travar a persistência do histórico
@@ -870,7 +879,7 @@ export class NotaFiscalService {
           return {
             usuarioId: userId,
             mercadoId,
-            notaFiscalId: nota._id as Types.ObjectId,
+            notaFiscalId: nota._id,
             produtoCatalogoId,
             codigoInternoMercado: p.codigo,
             descricaoBrutaNota: p.nome,
@@ -887,11 +896,58 @@ export class NotaFiscalService {
       this.logger.log(
         `Registrados com sucesso ${itensHistorico.length} itens no HistoricoCompra para a nota fiscal ${String(nota._id)}`,
       )
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const stack = err instanceof Error ? err.stack : undefined
       this.logger.error(
-        `Erro ao registrar itens no HistoricoCompra: ${err.message}`,
-        err.stack,
+        `Erro ao registrar itens no HistoricoCompra: ${msg}`,
+        stack,
       )
+    }
+  }
+
+  /**
+   * Converte string de endereço em objeto estruturado (rua, numero, bairro, cidade, uf)
+   */
+  private parseEndereco(enderecoStr?: string): EnderecoMercadoDto | undefined {
+    if (!enderecoStr) return undefined
+    const match = enderecoStr.match(
+      /^(.*?),\s*(\d+|S\/N)\s*[-,\s]*(.*?)[-,\s]+([A-Za-zÀ-ÿ\s]+)[-,\s/]+([A-Z]{2})$/i,
+    )
+    if (match) {
+      return {
+        rua: match[1]?.trim(),
+        numero: match[2]?.trim(),
+        bairro: match[3]?.trim(),
+        cidade: match[4]?.trim(),
+        uf: match[5]?.trim().toUpperCase(),
+      }
+    }
+    return {
+      rua: enderecoStr.trim(),
+    }
+  }
+
+  /**
+   * Executa o upsert atômico do mercado global e retorna seu ObjectId.
+   */
+  private async obterOuCriarMercadoId(
+    dados: DadosNotaFiscal,
+  ): Promise<Types.ObjectId | undefined> {
+    if (!dados.cnpj) return undefined
+    try {
+      const mercado = await this.mercadoService.processarUpsertMercado({
+        cnpj: dados.cnpj,
+        razaoSocial: dados.estabelecimento,
+        nomeFantasia: dados.estabelecimento,
+        endereco: this.parseEndereco(dados.endereco),
+      })
+      return mercado._id
+    } catch (err) {
+      this.logger.warn(
+        `Não foi possível processar mercado pelo CNPJ ${dados.cnpj}: ${err instanceof Error ? err.message : err}`,
+      )
+      return undefined
     }
   }
 }
