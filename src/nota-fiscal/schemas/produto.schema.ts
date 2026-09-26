@@ -23,6 +23,14 @@ export class Produto extends Document {
 
   @Prop({ type: Types.ObjectId, ref: 'NotaFiscal' })
   notaFiscal: Types.ObjectId
+
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'ProdutoCatalogo',
+    required: false,
+    default: null,
+  })
+  produtoCatalogo?: Types.ObjectId
 }
 
 export const ProdutoSchema = SchemaFactory.createForClass(Produto)
