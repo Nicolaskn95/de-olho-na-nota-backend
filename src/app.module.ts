@@ -9,6 +9,8 @@ import { AuthModule } from './auth/auth.module'
 import { DuracaoMediaModule } from './duracao-media/duracao-media.module'
 import { ListaComprasModule } from './lista-compras/lista-compras.module'
 import { MercadoModule } from './mercado/mercado.module'
+import { ProdutoCatalogoModule } from './produto-catalogo/produto-catalogo.module'
+import { HistoricoCompraModule } from './historico-compra/historico-compra.module'
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { MercadoModule } from './mercado/mercado.module'
     AuthModule,
     DuracaoMediaModule,
     ListaComprasModule,
+    ProdutoCatalogoModule,
+    HistoricoCompraModule,
   ],
   controllers: [AppController],
   providers: [AppService],
