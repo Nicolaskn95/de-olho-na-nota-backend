@@ -8,6 +8,7 @@ import { CategoriaModule } from './categoria/categoria.module'
 import { AuthModule } from './auth/auth.module'
 import { DuracaoMediaModule } from './duracao-media/duracao-media.module'
 import { ListaComprasModule } from './lista-compras/lista-compras.module'
+import { MercadoModule } from './mercado/mercado.module'
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ListaComprasModule } from './lista-compras/lista-compras.module'
         ),
       }),
     }),
+    MercadoModule,
     NotaFiscalModule,
     CategoriaModule,
     AuthModule,
