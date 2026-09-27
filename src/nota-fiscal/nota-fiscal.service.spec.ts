@@ -23,6 +23,7 @@ describe('NotaFiscalService', () => {
   beforeEach(async () => {
     mockNotaFiscalModel = {
       findOne: jest.fn(),
+      findById: jest.fn(),
       find: jest.fn(),
       aggregate: jest.fn(),
       updateMany: jest.fn(),
@@ -135,6 +136,65 @@ describe('NotaFiscalService', () => {
 
       const result = await service.listarNomesProdutos('', validUserId)
       expect(result).toEqual(['ARROZ', 'CAFÉ', 'FEIJAO'])
+    })
+  })
+
+  describe('atualizarNotaFiscal', () => {
+    it('should update payment, card, and tax fields', async () => {
+      const mockDoc: any = {
+        _id: validNotaId,
+        tipoPagamento: 'Dinheiro',
+        save: jest.fn().mockResolvedValue(true),
+      }
+      mockNotaFiscalModel.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(mockDoc),
+      })
+      mockNotaFiscalModel.findById.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(mockDoc),
+        }),
+      })
+
+      const dto = {
+        tipoPagamento: 'Cartão de Crédito',
+        cartaoUsado: 'Nubank Mastercard',
+        valorTributos: 18.75,
+        tributosDetalhados: { federal: 10, estadual: 8.75 },
+      }
+
+      await service.atualizarNotaFiscal(validNotaId, dto, validUserId)
+
+      expect(mockDoc.tipoPagamento).toBe('Cartão de Crédito')
+      expect(mockDoc.cartaoUsado).toBe('Nubank Mastercard')
+      expect(mockDoc.valorTributos).toBe(18.75)
+      expect(mockDoc.tributosDetalhados).toEqual({ federal: 10, estadual: 8.75 })
+      expect(mockDoc.save).toHaveBeenCalled()
+    })
+  })
+
+  describe('extrairDados', () => {
+    it('should extract taxes, payment type and card from html', () => {
+      const html = `
+        <html>
+          <body>
+            <div>MERCADO EXEMPLO LTDA CNPJ: 12.345.678/0001-90</div>
+            <div>Chave de acesso: 3524 0112 3456 7800 0190 6500 1000 0000 0110 0000 0010</div>
+            <div>Número: 000001 Série: 1 Emissão: 20/09/2026</div>
+            <div>Valor total R$ 100,00</div>
+            <div>Descontos R$ 0,00</div>
+            <div>Valor a pagar R$ 100,00</div>
+            <div>Forma de pagamento: Cartão de Crédito</div>
+            <div>Bandeira: Mastercard</div>
+            <div>Informação dos Tributos Totais Incidentes (Lei Federal 12.741/2012) R$ 14,50</div>
+            <div>Federal R$ 9,00 Estadual R$ 5,50</div>
+          </body>
+        </html>
+      `
+      const dados = (service as any).extrairDados(html)
+      expect(dados.valorTributos).toBe(14.5)
+      expect(dados.tributosDetalhados).toEqual({ federal: 9, estadual: 5.5, municipal: undefined })
+      expect(dados.tipoPagamento).toBe('Cartão de Crédito')
+      expect(dados.cartaoUsado).toBe('Mastercard')
     })
   })
 })
