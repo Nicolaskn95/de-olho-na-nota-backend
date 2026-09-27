@@ -37,6 +37,23 @@ async function migrarParaCatalogo() {
   const totalProdutos = await ProdutoModel.countDocuments()
   console.log(`📦 Total de produtos encontrados na base: ${totalProdutos}`)
 
+  // Sincroniza e corrige índices legados no MongoDB
+  try {
+    const indexes = await ProdutoCatalogoModel.collection.indexes()
+    const eanIndex = indexes.find((idx) => idx.name === 'ean_1')
+    if (eanIndex && !eanIndex.sparse) {
+      console.log('🔄 Corrigindo índice legado ean_1 para sparse: true...')
+      await ProdutoCatalogoModel.collection.dropIndex('ean_1')
+      await ProdutoCatalogoModel.collection.createIndex(
+        { ean: 1 },
+        { sparse: true },
+      )
+      console.log('✅ Índice ean_1 atualizado para sparse com sucesso!')
+    }
+  } catch (err: any) {
+    console.warn('⚠️ Nota sobre índices:', err.message)
+  }
+
   let produtosVinculados = 0
   let novosNoCatalogo = 0
   let existentesNoCatalogo = 0

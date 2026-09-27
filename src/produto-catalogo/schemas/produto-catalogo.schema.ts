@@ -8,8 +8,6 @@ export type ProdutoCatalogoDocument = HydratedDocument<ProdutoCatalogo>
 export class ProdutoCatalogo extends Document {
   @Prop({
     required: true,
-    unique: true,
-    index: true,
     trim: true,
   })
   chaveCanonica: string
