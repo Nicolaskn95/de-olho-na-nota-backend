@@ -19,6 +19,7 @@ import { HistoricoCompraService } from '../historico-compra/historico-compra.ser
 import { ProdutoCatalogoService } from '../produto-catalogo/produto-catalogo.service'
 import { MercadoService } from '../mercado/mercado.service'
 import { EnderecoMercadoDto } from '../mercado/dto/upsert-mercado.dto'
+import { CategoriaService } from '../categoria/categoria.service'
 
 /** Remove quebras de linha e múltiplos espaços */
 function normalizarTexto(val: string): string {
@@ -55,6 +56,8 @@ export class NotaFiscalService {
     private readonly historicoCompraService?: HistoricoCompraService,
     @Optional()
     private readonly produtoCatalogoService?: ProdutoCatalogoService,
+    @Optional()
+    private readonly categoriaService?: CategoriaService,
   ) {}
 
   async processarUrl(url: string, userId: string): Promise<NotaFiscal> {
@@ -109,6 +112,9 @@ export class NotaFiscalService {
       dados.cnpj,
       dados.dataEmissao,
     )
+
+    // Auto-categorização inteligente em background dos produtos recém-importados
+    this.autoCategorizarProdutosNota(userObjectId.toString(), String(nota._id))
 
     return this.notaFiscalModel
       .findById(nota._id)
@@ -321,6 +327,9 @@ export class NotaFiscalService {
           dados.cnpj,
           dados.dataEmissao,
         )
+
+        // Auto-categorização inteligente em background dos produtos recém-importados
+        this.autoCategorizarProdutosNota(userObjectId.toString(), String(nota._id))
 
         this.logger.log(
           `Nota fiscal processada com sucesso via chave de acesso: ${chaveAcesso.substring(0, 10)}...`,
@@ -948,6 +957,22 @@ export class NotaFiscalService {
         `Não foi possível processar mercado pelo CNPJ ${dados.cnpj}: ${err instanceof Error ? err.message : err}`,
       )
       return undefined
+    }
+  }
+
+  /**
+   * Executa a classificação inteligente de categorias em background para os produtos da nota.
+   * Não bloqueia a resposta da criação da nota nem gera falha caso o microsserviço demore.
+   */
+  private autoCategorizarProdutosNota(userId: string, notaId: string): void {
+    if (this.categoriaService) {
+      this.categoriaService
+        .classificarProdutosComIa(userId, { notaFiscalId: notaId })
+        .catch((err) => {
+          this.logger.debug(
+            `Auto-classificação em background para nota ${notaId} finalizada com aviso: ${err?.message}`,
+          )
+        })
     }
   }
 }

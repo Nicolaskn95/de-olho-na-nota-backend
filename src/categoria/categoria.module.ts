@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
+import { ConfigModule } from '@nestjs/config'
 import { AuthModule } from '../auth/auth.module'
 import { CategoriaController } from './categoria.controller'
 import { CategoriaService } from './categoria.service'
+import { CategorizadorClientService } from './categorizador-client.service'
 import { CategoriaSeed } from './categoria.seed'
 import { Categoria, CategoriaSchema } from './schemas/categoria.schema'
 import { Prefixo, PrefixoSchema } from './schemas/prefixo-categoria.schema'
@@ -15,6 +17,7 @@ import { DuracaoMediaModule } from '../duracao-media/duracao-media.module'
 
 @Module({
   imports: [
+    ConfigModule,
     AuthModule,
     DuracaoMediaModule,
     MongooseModule.forFeature([
@@ -25,7 +28,7 @@ import { DuracaoMediaModule } from '../duracao-media/duracao-media.module'
     ]),
   ],
   controllers: [CategoriaController],
-  providers: [CategoriaService, CategoriaSeed],
-  exports: [CategoriaService, MongooseModule],
+  providers: [CategoriaService, CategorizadorClientService, CategoriaSeed],
+  exports: [CategoriaService, CategorizadorClientService, MongooseModule],
 })
 export class CategoriaModule {}
