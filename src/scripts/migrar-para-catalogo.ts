@@ -2,47 +2,20 @@ import * as dotenv from 'dotenv'
 import mongoose from 'mongoose'
 import { ProdutoSchema } from '../nota-fiscal/schemas/produto.schema'
 import { ProdutoCatalogoSchema } from '../produto-catalogo/schemas/produto-catalogo.schema'
+import { HistoricoCompraSchema } from '../historico-compra/schemas/historico-compra.schema'
+import {
+  sanitizarDescricaoProduto,
+  gerarChaveCanonica,
+  isEanValido,
+} from '../produto-catalogo/utils/sanitizar-produto.util'
 
 dotenv.config()
 
-/**
- * Validação de EAN idêntica às regras do ProdutoCatalogoService
- */
-function isEanValido(ean?: string | null): boolean {
-  if (!ean || typeof ean !== 'string') {
-    return false
-  }
-
-  const valorNormalizado = ean.trim().toUpperCase()
-
-  if (
-    valorNormalizado === 'SEM GTIN' ||
-    valorNormalizado === 'SEMGTIN' ||
-    valorNormalizado === 'NAO INFORMADO' ||
-    valorNormalizado === 'NULL'
-  ) {
-    return false
-  }
-
-  if (!/^\d+$/.test(valorNormalizado)) {
-    return false
-  }
-
-  const tamanho = valorNormalizado.length
-  if (![8, 12, 13, 14].includes(tamanho)) {
-    return false
-  }
-
-  if (tamanho === 13 && valorNormalizado.startsWith('2')) {
-    return false
-  }
-
-  return true
-}
-
 async function migrarParaCatalogo() {
   const mongoUri =
-    process.env.MONGODB_URI || 'mongodb://localhost:27017/deOlhoNaNota'
+    process.env.MONGODB_URI ||
+    process.env.MONGO_URI ||
+    'mongodb://localhost:27017/deOlhoNaNota'
 
   console.log('------------------------------------------------------------')
   console.log('🚀 Iniciando script de migração para o Catálogo Global...')
@@ -56,14 +29,18 @@ async function migrarParaCatalogo() {
     'ProdutoCatalogo',
     ProdutoCatalogoSchema,
   )
+  const HistoricoCompraModel = mongoose.model(
+    'HistoricoCompra',
+    HistoricoCompraSchema,
+  )
 
   const totalProdutos = await ProdutoModel.countDocuments()
   console.log(`📦 Total de produtos encontrados na base: ${totalProdutos}`)
 
   let produtosVinculados = 0
-  let produtosIgnorados = 0
   let novosNoCatalogo = 0
   let existentesNoCatalogo = 0
+  let historicosAtualizados = 0
 
   const batchSize = 100
   let processados = 0
@@ -76,23 +53,24 @@ async function migrarParaCatalogo() {
     const codigo = prod.codigo
     const nome = prod.nome
 
-    if (!isEanValido(codigo) || !nome || !nome.trim()) {
-      produtosIgnorados++
+    const nomeSanitizado = sanitizarDescricaoProduto(nome || '')
+    if (!nomeSanitizado) {
       continue
     }
 
-    const eanLimpo = codigo.trim()
-    const nomeLimpo = nome.trim()
+    const chaveCanonica = gerarChaveCanonica(codigo, nomeSanitizado)
+    const eanLimpo = isEanValido(codigo) ? codigo.trim() : null
 
     // Verifica se já existia previamente no catálogo para estatística
-    const jaExistia = await ProdutoCatalogoModel.exists({ ean: eanLimpo })
+    const jaExistia = await ProdutoCatalogoModel.exists({ chaveCanonica })
 
     const catalogoDoc = await ProdutoCatalogoModel.findOneAndUpdate(
-      { ean: eanLimpo },
+      { chaveCanonica },
       {
         $setOnInsert: {
+          chaveCanonica,
           ean: eanLimpo,
-          nomePadronizado: nomeLimpo,
+          nomePadronizado: nomeSanitizado,
         },
       },
       {
@@ -114,6 +92,21 @@ async function migrarParaCatalogo() {
       { $set: { produtoCatalogo: catalogoDoc._id } },
     )
 
+    // Atualiza também itens de HistoricoCompra correspondentes
+    const resHistorico = await HistoricoCompraModel.updateMany(
+      {
+        $or: [
+          { notaFiscalId: prod.notaFiscal, codigoInternoMercado: prod.codigo },
+          { notaFiscalId: prod.notaFiscal, descricaoBrutaNota: prod.nome },
+        ],
+        produtoCatalogoId: null,
+      },
+      {
+        $set: { produtoCatalogoId: catalogoDoc._id },
+      },
+    )
+
+    historicosAtualizados += resHistorico.modifiedCount
     produtosVinculados++
 
     if (processados % 100 === 0 || processados === totalProdutos) {
@@ -131,7 +124,7 @@ async function migrarParaCatalogo() {
     `     * Itens que já existiam no catálogo: ${existentesNoCatalogo}`,
   )
   console.log(
-    `   - Produtos ignorados (sem cEAN ou pesagem interna): ${produtosIgnorados}`,
+    `   - Itens de HistoricoCompra atualizados com catalogoId: ${historicosAtualizados}`,
   )
   console.log('------------------------------------------------------------')
 

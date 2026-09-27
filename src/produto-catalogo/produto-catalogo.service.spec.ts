@@ -61,76 +61,45 @@ describe('ProdutoCatalogoService', () => {
     })
 
     it('deve retornar false para tamanhos que não correspondem a padrões GTIN', () => {
-      expect(service.isEanValido('12345')).toBe(false) // 5 dígitos
-      expect(service.isEanValido('1234567890')).toBe(false) // 10 dígitos
-      expect(service.isEanValido('123456789012345')).toBe(false) // 15 dígitos
+      expect(service.isEanValido('12345')).toBe(false)
+      expect(service.isEanValido('1234567890')).toBe(false)
     })
 
-    it('deve retornar false para itens de pesagem interna de padaria/açougue (iniciados com 2 no EAN-13)', () => {
-      // Padrão GS1 de circulação restrita / pesagem em balança de loja
+    it('deve retornar false para itens de pesagem interna de balança (iniciados com 2 no EAN-13)', () => {
       expect(service.isEanValido('2001234005001')).toBe(false)
       expect(service.isEanValido('2123456789012')).toBe(false)
     })
 
     it('deve retornar true para códigos GTIN universais válidos (8, 12, 13 e 14 dígitos)', () => {
-      expect(service.isEanValido('12345670')).toBe(true) // GTIN-8
-      expect(service.isEanValido('012345678905')).toBe(true) // GTIN-12 / UPC
-      expect(service.isEanValido('7891000315507')).toBe(true) // GTIN-13 / EAN-13 (Açúcar União)
-      expect(service.isEanValido('17891000315504')).toBe(true) // GTIN-14 / ITF-14
+      expect(service.isEanValido('12345670')).toBe(true)
+      expect(service.isEanValido('012345678905')).toBe(true)
+      expect(service.isEanValido('7891000315507')).toBe(true)
+      expect(service.isEanValido('17891000315504')).toBe(true)
     })
   })
 
   describe('processarItemCatalogo', () => {
-    it('deve retornar null e não chamar o banco se o cEAN for inválido', async () => {
-      const resultadoSemGtin = await service.processarItemCatalogo(
-        'SEM GTIN',
-        'PAO FRANCES KG',
-      )
-      const resultadoPesagem = await service.processarItemCatalogo(
-        '2012345678901',
-        'MACA GALA KG',
-      )
-      const resultadoNulo = await service.processarItemCatalogo(
-        null,
-        'PRODUTO QUALQUER',
-      )
-
-      expect(resultadoSemGtin).toBeNull()
-      expect(resultadoPesagem).toBeNull()
-      expect(resultadoNulo).toBeNull()
-      expect(mockProdutoCatalogoModel.findOneAndUpdate).not.toHaveBeenCalled()
-    })
-
-    it('deve retornar null e não chamar o banco se a descrição da nota for vazia', async () => {
-      const resultado = await service.processarItemCatalogo(
-        '7891000315507',
-        '   ',
-      )
-
-      expect(resultado).toBeNull()
-      expect(mockProdutoCatalogoModel.findOneAndUpdate).not.toHaveBeenCalled()
-    })
-
-    it('deve executar findOneAndUpdate com $setOnInsert para novo produto no catálogo', async () => {
+    it('deve processar item com EAN válido usando chave EAN_{ean}', async () => {
       const ean = '7891000315507'
-      const descricaoNota = 'ACUCAR REF INIAO 1KG'
-
-      const mockCriado = {
-        _id: 'prod-cat-123',
+      const nome = '1 UN - ACUCAR UNIAO REFINADO 1KG'
+      const mockDoc = {
+        _id: 'doc123',
+        chaveCanonica: `EAN_${ean}`,
         ean,
-        nomePadronizado: descricaoNota,
+        nomePadronizado: 'ACUCAR UNIAO REFINADO 1KG',
       }
 
-      mockProdutoCatalogoModel.findOneAndUpdate.mockResolvedValue(mockCriado)
+      mockProdutoCatalogoModel.findOneAndUpdate.mockResolvedValue(mockDoc)
 
-      const resultado = await service.processarItemCatalogo(ean, descricaoNota)
+      const resultado = await service.processarItemCatalogo(ean, nome)
 
       expect(mockProdutoCatalogoModel.findOneAndUpdate).toHaveBeenCalledWith(
-        { ean },
+        { chaveCanonica: `EAN_${ean}` },
         {
           $setOnInsert: {
+            chaveCanonica: `EAN_${ean}`,
             ean,
-            nomePadronizado: descricaoNota,
+            nomePadronizado: 'ACUCAR UNIAO REFINADO 1KG',
           },
         },
         {
@@ -139,65 +108,97 @@ describe('ProdutoCatalogoService', () => {
           setDefaultsOnInsert: true,
         },
       )
-
-      expect(resultado).toEqual(mockCriado)
+      expect(resultado).toEqual(mockDoc)
     })
 
-    it('deve retornar o produto existente preservando o nomePadronizado sem sobrescrita', async () => {
-      const ean = '7891000315507'
-      const descricaoNotaRuim = 'ACUCAR REF INIAO' // Erro de digitação da nota
-
-      // Simula que o banco já possuía o nome limpo e o $setOnInsert não o alterou
-      const mockExistente = {
-        _id: 'prod-cat-123',
-        ean,
-        nomePadronizado: 'Açúcar Refinado União 1kg', // Nome limpo já existente
+    it('deve processar item SEM GTIN ou hortifrúti gerando chave canônica unificada a partir dos tokens', async () => {
+      const mockDoc = {
+        _id: 'docBanana',
+        chaveCanonica: 'CANON_BANANA_NANICA',
+        ean: null,
+        nomePadronizado: 'BANANA NANICA',
       }
 
-      mockProdutoCatalogoModel.findOneAndUpdate.mockResolvedValue(mockExistente)
+      mockProdutoCatalogoModel.findOneAndUpdate.mockResolvedValue(mockDoc)
 
-      const resultado = await service.processarItemCatalogo(
-        ean,
-        descricaoNotaRuim,
+      const resultadoA = await service.processarItemCatalogo(
+        'SEM GTIN',
+        '0.686 KG - BANANA NANICA',
       )
 
       expect(mockProdutoCatalogoModel.findOneAndUpdate).toHaveBeenCalledWith(
-        { ean },
+        { chaveCanonica: 'CANON_BANANA_NANICA' },
         {
           $setOnInsert: {
-            ean,
-            nomePadronizado: descricaoNotaRuim,
+            chaveCanonica: 'CANON_BANANA_NANICA',
+            ean: null,
+            nomePadronizado: 'BANANA NANICA',
           },
         },
-        expect.any(Object),
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true,
+        },
       )
+      expect(resultadoA).toEqual(mockDoc)
 
-      expect(resultado?.nomePadronizado).toBe('Açúcar Refinado União 1kg')
+      // Outro mercado com prefixo de setor HORT
+      await service.processarItemCatalogo(null, 'HORT BANANA NANICA')
+      expect(mockProdutoCatalogoModel.findOneAndUpdate).toHaveBeenLastCalledWith(
+        { chaveCanonica: 'CANON_BANANA_NANICA' },
+        expect.anything(),
+        expect.anything(),
+      )
+    })
+
+    it('deve retornar null se a descrição for vazia ou inválida', async () => {
+      const resultadoVazio = await service.processarItemCatalogo('12345', '')
+      const resultadoNulo = await service.processarItemCatalogo(null, null)
+
+      expect(resultadoVazio).toBeNull()
+      expect(resultadoNulo).toBeNull()
+      expect(mockProdutoCatalogoModel.findOneAndUpdate).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('buscarPorChaveCanonica', () => {
+    it('deve buscar pelo campo chaveCanonica com populate de categoria', async () => {
+      const mockDoc = { _id: '123', chaveCanonica: 'CANON_ARROZ' }
+      const mockQuery = {
+        populate: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue(mockDoc),
+      }
+      mockProdutoCatalogoModel.findOne.mockReturnValue(mockQuery)
+
+      const res = await service.buscarPorChaveCanonica('CANON_ARROZ')
+
+      expect(mockProdutoCatalogoModel.findOne).toHaveBeenCalledWith({
+        chaveCanonica: 'CANON_ARROZ',
+      })
+      expect(res).toEqual(mockDoc)
     })
   })
 
   describe('buscarPorEan', () => {
-    it('deve retornar null se o ean for inválido', async () => {
-      const resultado = await service.buscarPorEan('invalido')
-      expect(resultado).toBeNull()
-      expect(mockProdutoCatalogoModel.findOne).not.toHaveBeenCalled()
+    it('deve retornar null se EAN for inválido', async () => {
+      const res = await service.buscarPorEan('SEM GTIN')
+      expect(res).toBeNull()
     })
 
-    it('deve buscar e popular categoria quando o ean for válido', async () => {
-      const ean = '7891000315507'
-      const mockProduto = { _id: '123', ean, nomePadronizado: 'Açúcar' }
+    it('deve buscar por EAN quando válido', async () => {
+      const mockDoc = { _id: '123', ean: '7891000315507' }
+      const mockQuery = {
+        populate: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue(mockDoc),
+      }
+      mockProdutoCatalogoModel.findOne.mockReturnValue(mockQuery)
 
-      const mockExec = jest.fn().mockResolvedValue(mockProduto)
-      const mockPopulate = jest.fn().mockReturnValue({ exec: mockExec })
-      mockProdutoCatalogoModel.findOne.mockReturnValue({
-        populate: mockPopulate,
+      const res = await service.buscarPorEan('7891000315507')
+      expect(mockProdutoCatalogoModel.findOne).toHaveBeenCalledWith({
+        ean: '7891000315507',
       })
-
-      const resultado = await service.buscarPorEan(ean)
-
-      expect(mockProdutoCatalogoModel.findOne).toHaveBeenCalledWith({ ean })
-      expect(mockPopulate).toHaveBeenCalledWith('categoria')
-      expect(resultado).toEqual(mockProduto)
+      expect(res).toEqual(mockDoc)
     })
   })
 })

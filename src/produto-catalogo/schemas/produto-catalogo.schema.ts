@@ -12,7 +12,15 @@ export class ProdutoCatalogo extends Document {
     index: true,
     trim: true,
   })
-  ean: string
+  chaveCanonica: string
+
+  @Prop({
+    type: String,
+    required: false,
+    trim: true,
+    default: null,
+  })
+  ean?: string | null
 
   @Prop({
     required: true,
@@ -32,4 +40,5 @@ export class ProdutoCatalogo extends Document {
 export const ProdutoCatalogoSchema =
   SchemaFactory.createForClass(ProdutoCatalogo)
 
-ProdutoCatalogoSchema.index({ ean: 1 }, { unique: true })
+ProdutoCatalogoSchema.index({ chaveCanonica: 1 }, { unique: true })
+ProdutoCatalogoSchema.index({ ean: 1 }, { sparse: true })

@@ -20,6 +20,7 @@ import { ProdutoCatalogoService } from '../produto-catalogo/produto-catalogo.ser
 import { MercadoService } from '../mercado/mercado.service'
 import { EnderecoMercadoDto } from '../mercado/dto/upsert-mercado.dto'
 import { CategoriaService } from '../categoria/categoria.service'
+import { sanitizarDescricaoProduto } from '../produto-catalogo/utils/sanitizar-produto.util'
 
 /** Remove quebras de linha e múltiplos espaços */
 function normalizarTexto(val: string): string {
@@ -27,18 +28,8 @@ function normalizarTexto(val: string): string {
   return val.replace(/\s+/g, ' ').trim()
 }
 
-/** Siglas de estado que às vezes aparecem no início (layout da página) */
-const SIGLAS_ESTADO =
-  /^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MG|MS|MT|PA|PB|PR|PE|PI|RJ|RN|RO|RS|SC|SP|SE|TO)\s+/i
-/** Unidades que às vezes vêm coladas no final do nome no HTML */
-const UNIDADES_SUFIXO =
-  /\s+(UN|CX|BJ|KG|G|PCT|PC|LT|ML|GR|PÇ|PAR|KIT|FD|SC|DG|TB|AM|FR|PT|TR|VD|EMB|LATA|BARRA)\s*$/i
-
 function normalizarNomeProduto(val: string): string {
-  let limpo = normalizarTexto(val)
-  limpo = limpo.replace(SIGLAS_ESTADO, '').trim() || limpo
-  limpo = limpo.replace(UNIDADES_SUFIXO, '').trim() || limpo
-  return limpo
+  return sanitizarDescricaoProduto(val)
 }
 
 @Injectable()

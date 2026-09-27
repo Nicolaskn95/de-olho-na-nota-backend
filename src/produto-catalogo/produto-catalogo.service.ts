@@ -5,6 +5,11 @@ import {
   ProdutoCatalogo,
   ProdutoCatalogoDocument,
 } from './schemas/produto-catalogo.schema'
+import {
+  isEanValido as validarEanUtil,
+  sanitizarDescricaoProduto,
+  gerarChaveCanonica,
+} from './utils/sanitizar-produto.util'
 
 @Injectable()
 export class ProdutoCatalogoService {
@@ -17,84 +22,48 @@ export class ProdutoCatalogoService {
 
   /**
    * Valida se uma string representa um código de barras universal cEAN / GTIN válido.
-   *
-   * Regras:
-   * - Deve ser não-nulo e conter apenas dígitos numéricos após limpeza.
-   * - Rejeita explicitamente marcações como "SEM GTIN" e "SEMGTIN".
-   * - Padrão internacional GTIN: 8, 12, 13 ou 14 dígitos numéricos.
-   * - Rejeita códigos com prefixo de pesagem interna de loja/padaria (padrão GS1: prefixos 20 a 29
-   *   para produtos de peso variável/circulação restrita, ex: 13 dígitos iniciados com 2).
    */
   isEanValido(ean?: string | null): boolean {
-    if (!ean || typeof ean !== 'string') {
-      return false
-    }
-
-    const valorNormalizado = ean.trim().toUpperCase()
-
-    if (
-      valorNormalizado === 'SEM GTIN' ||
-      valorNormalizado === 'SEMGTIN' ||
-      valorNormalizado === 'NAO INFORMADO' ||
-      valorNormalizado === 'NULL'
-    ) {
-      return false
-    }
-
-    // Apenas dígitos
-    if (!/^\d+$/.test(valorNormalizado)) {
-      return false
-    }
-
-    const tamanho = valorNormalizado.length
-    if (![8, 12, 13, 14].includes(tamanho)) {
-      return false
-    }
-
-    // Códigos de pesagem interna (GS1 prefixo 20-29 para itens de peso variável como padaria, carnes, hortifrúti)
-    if (tamanho === 13 && valorNormalizado.startsWith('2')) {
-      return false
-    }
-
-    return true
+    return validarEanUtil(ean)
   }
 
   /**
-   * Processa um item no catálogo global com base estritamente no cEAN.
+   * Processa e padroniza um item no catálogo global.
    *
-   * Regra Anti-Poluição:
-   * - Utiliza findOneAndUpdate com $setOnInsert para garantir que descrições ruidosas
-   *   vindas de notas da SEFAZ não sobrescrevam um nome padronizado já existente.
-   * - Retorna null caso o item não possua um cEAN válido (ex: itens pesados, padaria)
-   *   ou se a descrição da nota for inválida/vazia.
+   * Regras:
+   * - Sanitiza a descrição da nota para remover prefixos fiscais e de setor de mercado.
+   * - Gera uma chaveCanonica determinística:
+   *   - Se possuir cEAN válido: chave baseada no código de barras ('EAN_...').
+   *   - Se for item sem EAN (hortifrúti, carnes, granel): chave baseada no conjunto ordenado de tokens do nome ('CANON_...').
+   * - Utiliza findOneAndUpdate com $setOnInsert para garantir que descrições ruidosas posteriores
+   *   não sobrescrevam o nome padronizado já estabelecido.
    */
   async processarItemCatalogo(
-    ean?: string | null,
+    codigoOuEan?: string | null,
     descricaoNota?: string | null,
   ): Promise<ProdutoCatalogoDocument | null> {
-    if (!this.isEanValido(ean)) {
-      this.logger.debug(
-        `Item ignorado do catálogo global: cEAN inválido ou ausente [${ean}]`,
-      )
-      return null
-    }
+    const descricaoSanitizada = sanitizarDescricaoProduto(
+      descricaoNota ? descricaoNota.trim() : '',
+    )
 
-    const descricaoLimpa = descricaoNota ? descricaoNota.trim() : ''
-    if (!descricaoLimpa) {
+    if (!descricaoSanitizada) {
       this.logger.warn(
-        `Item ignorado do catálogo global: descrição vazia [EAN: ${ean}]`,
+        `Item ignorado do catálogo global: descrição vazia [Código: ${codigoOuEan}]`,
       )
       return null
     }
 
-    const eanLimpo = ean!.trim()
+    const chaveCanonica = gerarChaveCanonica(codigoOuEan, descricaoSanitizada)
+    const eanValido = this.isEanValido(codigoOuEan)
+    const eanLimpo = eanValido ? codigoOuEan!.trim() : null
 
     const produto = await this.produtoCatalogoModel.findOneAndUpdate(
-      { ean: eanLimpo },
+      { chaveCanonica },
       {
         $setOnInsert: {
+          chaveCanonica,
           ean: eanLimpo,
-          nomePadronizado: descricaoLimpa,
+          nomePadronizado: descricaoSanitizada,
         },
       },
       {
@@ -105,7 +74,7 @@ export class ProdutoCatalogoService {
     )
 
     this.logger.log(
-      `Produto processado no catálogo global [EAN: ${eanLimpo}, ID: ${String(produto._id)}]`,
+      `Produto processado no catálogo global [Chave: ${chaveCanonica}, ID: ${String(produto._id)}]`,
     )
 
     return produto
@@ -121,6 +90,22 @@ export class ProdutoCatalogoService {
 
     return this.produtoCatalogoModel
       .findOne({ ean: ean.trim() })
+      .populate('categoria')
+      .exec()
+  }
+
+  /**
+   * Busca um produto no catálogo global pela chave canônica.
+   */
+  async buscarPorChaveCanonica(
+    chaveCanonica: string,
+  ): Promise<ProdutoCatalogoDocument | null> {
+    if (!chaveCanonica || !chaveCanonica.trim()) {
+      return null
+    }
+
+    return this.produtoCatalogoModel
+      .findOne({ chaveCanonica: chaveCanonica.trim() })
       .populate('categoria')
       .exec()
   }
