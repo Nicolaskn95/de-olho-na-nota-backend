@@ -12,6 +12,7 @@ import { NotaFiscalService } from './nota-fiscal.service'
 import { ProcessarNotaDto } from './dto/processar-nota.dto'
 import { ProcessarChaveAcessoDto } from './dto/processar-chave-acesso.dto'
 import { AtualizarEstabelecimentoDto } from './dto/atualizar-estabelecimento.dto'
+import { AtualizarNotaFiscalDto } from './dto/atualizar-nota-fiscal.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { UserId } from '../auth/decorators/user.decorator'
 
@@ -91,4 +92,15 @@ export class NotaFiscalController {
       userId,
     )
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  async atualizar(
+    @Param('id') id: string,
+    @Body() dto: AtualizarNotaFiscalDto,
+    @UserId() userId: string,
+  ) {
+    return this.notaFiscalService.atualizarNotaFiscal(id, dto, userId)
+  }
 }
+

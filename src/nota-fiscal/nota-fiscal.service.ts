@@ -13,7 +13,12 @@ import * as cheerio from 'cheerio'
 import { NotaFiscal } from './schemas/nota-fiscal.schema'
 import { Produto } from './schemas/produto.schema'
 import { EstabelecimentoUsuario } from './schemas/estabelecimento-usuario.schema'
-import { DadosNotaFiscal, ProdutoExtraido } from './interface/INotaFiscal'
+import {
+  DadosNotaFiscal,
+  ProdutoExtraido,
+  TributosDetalhados,
+} from './interface/INotaFiscal'
+import { AtualizarNotaFiscalDto } from './dto/atualizar-nota-fiscal.dto'
 import { CaptchaSolverService } from './captcha-solver.service'
 import { HistoricoCompraService } from '../historico-compra/historico-compra.service'
 import { ProdutoCatalogoService } from '../produto-catalogo/produto-catalogo.service'
@@ -480,12 +485,117 @@ export class NotaFiscalService {
       ? parseFloat(valorPagoMatch[1].replace('.', '').replace(',', '.'))
       : valorTotal - descontos
 
+    // 1. Extração de Tributos Incidentes (Lei Federal 12.741/2012)
+    let valorTributos = 0
+    let tributosDetalhados: TributosDetalhados | undefined
+
+    const tributosTotaisMatch = textoBody.match(
+      /(?:Informação\s+dos\s+Tributos\s+Totais\s+Incidentes|Tributos\s+Totais\s+Incidentes|Valor\s+aproximado\s+dos\s+tributos|Valor\s+aprox\.?\s*(?:dos\s*)?tributos|Tributos\s+Incidentes|Total\s+de\s+tributos)[^\d\n\r]*R\$?[:\s]*([\d.,]+)/i,
+    )
+    if (tributosTotaisMatch) {
+      valorTributos =
+        parseFloat(
+          tributosTotaisMatch[1].replace(/\./g, '').replace(',', '.'),
+        ) || 0
+    }
+
+    const fedMatch = textoBody.match(/Federal[:\s]*R\$?[:\s]*([\d.,]+)/i)
+    const estMatch = textoBody.match(/Estadual[:\s]*R\$?[:\s]*([\d.,]+)/i)
+    const munMatch = textoBody.match(/Municipal[:\s]*R\$?[:\s]*([\d.,]+)/i)
+
+    if (fedMatch || estMatch || munMatch) {
+      tributosDetalhados = {
+        federal: fedMatch
+          ? parseFloat(fedMatch[1].replace(/\./g, '').replace(',', '.')) || 0
+          : undefined,
+        estadual: estMatch
+          ? parseFloat(estMatch[1].replace(/\./g, '').replace(',', '.')) || 0
+          : undefined,
+        municipal: munMatch
+          ? parseFloat(munMatch[1].replace(/\./g, '').replace(',', '.')) || 0
+          : undefined,
+      }
+      if (!valorTributos) {
+        valorTributos =
+          (tributosDetalhados.federal || 0) +
+          (tributosDetalhados.estadual || 0) +
+          (tributosDetalhados.municipal || 0)
+      }
+    }
+
+    // 2. Extração de Forma de Pagamento, Tipo e Cartão
     const formaPagamentoMatch = $('body')
       .text()
-      .match(/Forma de pagamento[:\s]*([\w\s]+?)(?:Valor|R\$|\d)/i)
-    const formaPagamento = formaPagamentoMatch
+      .match(/(?:Forma(?:\s+de)?\s+pagamento|Meio(?:\s+de)?\s+pagamento)[:\s]*([\w\sÀ-ÿ]+?)(?=(?:Valor|R\$|\d|\n|<|$))/i)
+    let formaPagamento = formaPagamentoMatch
       ? formaPagamentoMatch[1].trim()
       : ''
+
+    let tipoPagamento = ''
+    if (/cr[eé]dito/i.test(formaPagamento) || (!formaPagamento && /cart[ãa]o\s+de\s+cr[eé]dito/i.test(textoBody))) {
+      tipoPagamento = 'Cartão de Crédito'
+    } else if (/d[eé]bito/i.test(formaPagamento) || (!formaPagamento && /cart[ãa]o\s+de\s+d[eé]bito/i.test(textoBody))) {
+      tipoPagamento = 'Cartão de Débito'
+    } else if (/pix/i.test(formaPagamento) || (!formaPagamento && /\bpix\b/i.test(textoBody))) {
+      tipoPagamento = 'PIX'
+    } else if (/dinheiro/i.test(formaPagamento) || (!formaPagamento && /\bdinheiro\b/i.test(textoBody))) {
+      tipoPagamento = 'Dinheiro'
+    } else if (/alimenta[çc][ãa]o/i.test(formaPagamento) || (!formaPagamento && /vale\s+alimenta[çc][ãa]o/i.test(textoBody))) {
+      tipoPagamento = 'Vale Alimentação'
+    } else if (/refei[çc][ãa]o/i.test(formaPagamento) || (!formaPagamento && /vale\s+refei[çc][ãa]o/i.test(textoBody))) {
+      tipoPagamento = 'Vale Refeição'
+    } else if (/cart[ãa]o/i.test(formaPagamento)) {
+      tipoPagamento = 'Cartão'
+    } else if (formaPagamento) {
+      tipoPagamento = formaPagamento
+    }
+
+    if (!formaPagamento && tipoPagamento) {
+      formaPagamento = tipoPagamento
+    }
+
+    let cartaoUsado = ''
+    const bandeiraMatch = $('body')
+      .text()
+      .match(
+        /(?:Bandeira(?:\s+do\s+cartão)?|Rede|Credenciadora)[:\s]*([A-Za-z0-9\s]+?)(?:\s+(?:Autorização|CNPJ|Valor|R\$|\d)|$)/i,
+      )
+    if (bandeiraMatch && bandeiraMatch[1]) {
+      const cand = bandeiraMatch[1].trim()
+      if (cand.length >= 2 && cand.length <= 30) {
+        cartaoUsado = cand
+      }
+    }
+
+    if (!cartaoUsado) {
+      const bandeiras = [
+        'Mastercard',
+        'Visa',
+        'Elo',
+        'Hipercard',
+        'American Express',
+        'Amex',
+        'Alelo',
+        'Sodexo',
+        'Ticket',
+        'VR Benefícios',
+        'Nubank',
+        'Inter',
+      ]
+      for (const b of bandeiras) {
+        const regex = new RegExp(`\\b${b}\\b`, 'i')
+        if (regex.test(formaPagamento) || regex.test(textoBody)) {
+          const idxPag = textoBody.search(/pagamento|cart[ãa]o|bandeira/i)
+          if (idxPag !== -1) {
+            const trecho = textoBody.slice(idxPag, idxPag + 300)
+            if (regex.test(trecho)) {
+              cartaoUsado = b
+              break
+            }
+          }
+        }
+      }
+    }
 
     const produtos = this.extrairProdutos($)
 
@@ -501,6 +611,10 @@ export class NotaFiscalService {
       descontos,
       valorPago,
       formaPagamento,
+      tipoPagamento,
+      cartaoUsado,
+      valorTributos,
+      tributosDetalhados,
       produtos,
     }
   }
@@ -551,6 +665,43 @@ export class NotaFiscalService {
       .findOne({ _id: id, ...this.userFilter(userId) })
       .populate('produtos')
       .exec()
+  }
+
+  async atualizarNotaFiscal(
+    id: string,
+    dto: AtualizarNotaFiscalDto,
+    userId: string,
+  ): Promise<NotaFiscal> {
+    const nota = await this.notaFiscalModel
+      .findOne({ _id: id, ...this.userFilter(userId) })
+      .exec()
+
+    if (!nota) {
+      throw new NotFoundException('Nota fiscal não encontrada')
+    }
+
+    if (dto.tipoPagamento !== undefined) {
+      nota.tipoPagamento = dto.tipoPagamento ? normalizarTexto(dto.tipoPagamento) : ''
+    }
+    if (dto.cartaoUsado !== undefined) {
+      nota.cartaoUsado = dto.cartaoUsado ? normalizarTexto(dto.cartaoUsado) : ''
+    }
+    if (dto.formaPagamento !== undefined) {
+      nota.formaPagamento = dto.formaPagamento ? normalizarTexto(dto.formaPagamento) : ''
+    }
+    if (dto.valorTributos !== undefined) {
+      nota.valorTributos = dto.valorTributos
+    }
+    if (dto.tributosDetalhados !== undefined) {
+      nota.tributosDetalhados = dto.tributosDetalhados
+    }
+
+    await nota.save()
+
+    return this.notaFiscalModel
+      .findById(nota._id)
+      .populate('produtos')
+      .exec() as Promise<NotaFiscal>
   }
 
   async listarEstabelecimentos(userId: string): Promise<

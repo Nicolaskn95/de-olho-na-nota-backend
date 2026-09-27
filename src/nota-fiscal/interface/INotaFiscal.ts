@@ -7,6 +7,12 @@ export interface ProdutoExtraido {
   valorTotal: number
 }
 
+export interface TributosDetalhados {
+  federal?: number
+  estadual?: number
+  municipal?: number
+}
+
 export interface DadosNotaFiscal {
   chaveAcesso: string
   numero: string
@@ -19,5 +25,10 @@ export interface DadosNotaFiscal {
   descontos: number
   valorPago: number
   formaPagamento: string
+  tipoPagamento?: string
+  cartaoUsado?: string
+  valorTributos?: number
+  tributosDetalhados?: TributosDetalhados
   produtos: ProdutoExtraido[]
 }
+

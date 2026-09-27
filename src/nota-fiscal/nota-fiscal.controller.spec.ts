@@ -101,4 +101,12 @@ describe('NotaFiscalController', () => {
     expect(service.atualizarNomeEstabelecimento).toHaveBeenCalledWith('123', dto.nomeDepara, 'user-1')
     expect(result).toEqual({ cnpj: '123', nomeDepara: 'Mercado Bom' })
   })
+
+  it('should call atualizarNotaFiscal', async () => {
+    service.atualizarNotaFiscal = jest.fn().mockResolvedValue({ id: 'nf-1', tipoPagamento: 'PIX' })
+    const dto = { tipoPagamento: 'PIX', valorTributos: 15.5 }
+    const result = await controller.atualizar('nf-1', dto, 'user-1')
+    expect(service.atualizarNotaFiscal).toHaveBeenCalledWith('nf-1', dto, 'user-1')
+    expect(result).toEqual({ id: 'nf-1', tipoPagamento: 'PIX' })
+  })
 })

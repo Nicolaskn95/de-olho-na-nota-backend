@@ -48,6 +48,22 @@ export class NotaFiscal extends Document {
   @Prop()
   formaPagamento: string
 
+  @Prop()
+  tipoPagamento?: string
+
+  @Prop()
+  cartaoUsado?: string
+
+  @Prop({ default: 0 })
+  valorTributos?: number
+
+  @Prop({ type: Object, default: {} })
+  tributosDetalhados?: {
+    federal?: number
+    estadual?: number
+    municipal?: number
+  }
+
   @Prop({ type: [{ type: Types.ObjectId, ref: 'Produto' }] })
   produtos: Types.ObjectId[]
 
