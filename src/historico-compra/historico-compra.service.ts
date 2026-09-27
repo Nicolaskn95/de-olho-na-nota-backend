@@ -171,6 +171,16 @@ export class HistoricoCompraService {
       const nomePrincipal =
         g.nomePadronizado || g.nomes[0] || 'Produto sem nome'
 
+      const compras = itensOrdenados.map((item) => ({
+        dataCompra: item.dataCompra
+          ? new Date(item.dataCompra).toISOString()
+          : new Date().toISOString(),
+        estabelecimento: item.estabelecimento || 'Supermercado',
+        precoUnitario: item.precoUnitario || 0,
+        quantidade: item.quantidade || 1,
+        precoTotal: item.precoTotal || 0,
+      }))
+
       return {
         id: String(g._id),
         nome: nomePrincipal,
@@ -192,6 +202,7 @@ export class HistoricoCompraService {
           : null,
         estabelecimentos,
         precosPorMes,
+        compras,
       }
     })
 

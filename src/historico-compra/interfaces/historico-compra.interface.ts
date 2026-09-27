@@ -26,6 +26,14 @@ export interface CategoriaResponseDto {
   icone?: string
 }
 
+export interface HistoricoItemCompraDto {
+  dataCompra: string
+  estabelecimento: string
+  precoUnitario: number
+  quantidade: number
+  precoTotal: number
+}
+
 export interface ProdutoAgrupadoResponse {
   id: string
   nome: string
@@ -38,6 +46,7 @@ export interface ProdutoAgrupadoResponse {
   ultimaData: string
   estabelecimentos: Record<string, EstabelecimentoItemStats>
   precosPorMes: Record<string, PrecoMesStats>
+  compras: HistoricoItemCompraDto[]
   variacao: number | null
   categoria: CategoriaResponseDto | null
 }
