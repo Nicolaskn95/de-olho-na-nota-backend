@@ -51,6 +51,13 @@ describe('CategorizadorClientService', () => {
       expect(service.extrairPrefixo('COCA COLA 2L ZERO')).toBe('COCA COLA')
       expect(service.extrairPrefixo('ARROZ CAMIL T1 5KG')).toBe('ARROZ CAMIL')
     })
+
+    it('deve preservar a embalagem fiscal no prefixo sem colidir prefixos curtos genéricos (1 MA, 1 FR)', () => {
+      expect(service.extrairPrefixo('1 MA - AGRIAO HIDROPONICO')).toBe('1 MA - AGRIAO HIDROPONICO')
+      expect(service.extrairPrefixo('1 MA - COENTRO')).toBe('1 MA - COENTRO')
+      expect(service.extrairPrefixo('1 FR - DES LYSOFORM SUAVE')).toBe('1 FR - DES LYSOFORM')
+      expect(service.extrairPrefixo('1 FR - VINAGRE BELMONT ALCO')).toBe('1 FR - VINAGRE BELMONT')
+    })
   })
 
   describe('isOnline', () => {

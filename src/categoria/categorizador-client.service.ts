@@ -33,7 +33,20 @@ export class CategorizadorClientService {
    */
   extrairPrefixo(nome: string): string {
     const limpo = nome.trim().toUpperCase()
-    const tokens = limpo.split(/\s+/)
+
+    // Detecta se tem prefixo fiscal de embalagem/medida: ex '1 MA - ', '0.686 KG - ', '1 FR - '
+    const fiscalMatch = limpo.match(
+      /^(\d+([.,]\d+)?\s*(MA|SH|TP|FR|PC|KG|UN|LT|CX|PT|GL|FD|BJ|LATA|BARRA|M|G|GR)\s*[-–]\s*)/i,
+    )
+    let prefixoFiscal = ''
+    let resto = limpo
+
+    if (fiscalMatch) {
+      prefixoFiscal = fiscalMatch[1]
+      resto = limpo.slice(prefixoFiscal.length).trim()
+    }
+
+    const tokens = resto.split(/\s+/)
     const prefixTokens: string[] = []
 
     for (const token of tokens) {
@@ -54,8 +67,10 @@ export class CategorizadorClientService {
       }
     }
 
-    const prefixo = prefixTokens.join(' ').replace(/[^A-Z0-9\s]/g, '').trim()
-    return prefixo.length >= 2 ? prefixo : limpo.slice(0, 10).trim()
+    const nomeProd = prefixTokens.join(' ').replace(/[^A-Z0-9\s]/g, '').trim()
+    const resultado = (prefixoFiscal + nomeProd).trim()
+
+    return resultado.length >= 2 ? resultado : limpo.slice(0, 15).trim()
   }
 
   /**
