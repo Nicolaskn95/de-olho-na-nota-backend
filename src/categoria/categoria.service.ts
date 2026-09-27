@@ -4,6 +4,7 @@ import {
   NotFoundException,
   OnModuleInit,
   Logger,
+  Optional,
 } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
@@ -14,6 +15,7 @@ import { ImportarPrefixosDto } from './dto/importar-prefixos.dto'
 import { NotaFiscal } from '../nota-fiscal/schemas/nota-fiscal.schema'
 import { ClassificarProdutosIaDto } from './dto/classificar-produtos-ia.dto'
 import { QwenAiService } from '../duracao-media/qwen-ai.service'
+import { CategorizadorClientService } from './categorizador-client.service'
 
 export interface ImportarPrefixosResultado {
   criados: number
@@ -34,6 +36,8 @@ export class CategoriaService implements OnModuleInit {
     @InjectModel(NotaFiscal.name)
     private notaFiscalModel: Model<NotaFiscal>,
     private qwenAiService: QwenAiService,
+    @Optional()
+    private categorizadorClientService?: CategorizadorClientService,
   ) {}
 
   async onModuleInit() {
@@ -296,11 +300,37 @@ export class CategoriaService implements OnModuleInit {
       return this.listarPrefixos(userId)
     }
 
-    // Chamar IA para classificar os produtos pendentes
-    const classificacoes = await this.qwenAiService.classificarProdutos(
-      produtosSemCategoria,
-      categoriasDisponiveis,
-    )
+    // 1. Tentar classificar os produtos pendentes prioritariamente via microsserviço dedicado
+    let classificacoes: Array<{
+      produto: string
+      prefixo: string
+      codigoCategoria: string
+    }> = []
+
+    if (this.categorizadorClientService) {
+      try {
+        classificacoes =
+          await this.categorizadorClientService.classificarProdutos(
+            produtosSemCategoria,
+            categoriasDisponiveis,
+          )
+      } catch (error: any) {
+        this.logger.warn(
+          `Erro no microsserviço de categorização (${error?.message}). Ativando fallback com QwenAiService.`,
+        )
+      }
+    }
+
+    // 2. Se o microsserviço não retornou nenhuma classificação ou falhou, usa QwenAiService como fallback
+    if (!classificacoes || classificacoes.length === 0) {
+      this.logger.log(
+        'Classificando pendências via QwenAiService (fallback)...',
+      )
+      classificacoes = await this.qwenAiService.classificarProdutos(
+        produtosSemCategoria,
+        categoriasDisponiveis,
+      )
+    }
 
     const novosPrefixosDocs: Array<{
       prefixo: string

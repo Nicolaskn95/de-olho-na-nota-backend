@@ -11,9 +11,9 @@ import {
   EstabelecimentoUsuarioSchema,
 } from './schemas/estabelecimento-usuario.schema'
 import { MercadoModule } from '../mercado/mercado.module'
-
 import { HistoricoCompraModule } from '../historico-compra/historico-compra.module'
 import { ProdutoCatalogoModule } from '../produto-catalogo/produto-catalogo.module'
+import { CategoriaModule } from '../categoria/categoria.module'
 
 @Module({
   imports: [
@@ -21,6 +21,7 @@ import { ProdutoCatalogoModule } from '../produto-catalogo/produto-catalogo.modu
     MercadoModule,
     HistoricoCompraModule,
     ProdutoCatalogoModule,
+    CategoriaModule,
     MongooseModule.forFeature([
       { name: NotaFiscal.name, schema: NotaFiscalSchema },
       { name: Produto.name, schema: ProdutoSchema },
