@@ -393,19 +393,49 @@ Instruções:
       let codigoCategoria = 'MERCEARIA_SECA'
 
       if (
-        /CARNE|BEEF|ALCATRA|CONTRA|PICANHA|FRANGO|COXA|CORACAO|PEIXE|TINHA|BACON|LINGUICA|COSTELA|BIFE|PESCADA|TILAPIA|SARDINHA/i.test(
+        /FILTRO|FIL PAP|PRATO|COPO|TALHER|GUARDANAPO|POTE|VASSOURA|RODO|LAMPADA|PILHA|VELA/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'UTILIDADES_DOMESTICAS'
+      } else if (
+        /SABAO|DETERGENTE|AMACIANTE|DESINFETANTE|AGUA SANIT|ALVEJANTE|ALCOOL|SAPOLIO|LAVAND|LIMPADOR|INSETICIDA|ESPONJA|MULTIUSO|SCOTCH BRITE/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'LIMPEZA'
+      } else if (
+        /PAO|BOLO|TORRADA|SONHO|BISNAGUITA|CROISSANT|BAGUETE|PAOZINHO|PANETONE|BISCOITO|BISC|BOLACHA|ROSQUINHA/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'PADARIA_E_CONFEITARIA'
+      } else if (
+        /GELATINA|PO GEL|ARROZ|FEIJAO|MACARRAO|FARINHA|ACUCAR|CAFE|SAL|MOLHO|EXTRATO|SARDINHA|ATUM|MAIONESE|CEREAL|SUCRILHOS/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'MERCEARIA_SECA'
+      } else if (
+        /CARNE|BEEF|ALCATRA|CONTRA|PICANHA|FRANGO|COXA|SOBRECOXA|CORACAO|PEIXE|TINHA|BACON|LINGUICA|COSTELA|BIFE|PESCADA|TILAPIA|BOVIN|SUIN|PALETA/i.test(
           prodUpper,
         )
       ) {
         codigoCategoria = 'ACOUGUE_E_PEIXARIA'
       } else if (
-        /BANANA|MACA|LARANJA|LIMAO|MANG|UVA|MELANCIA|MAMAO|ABACAXI|MORANGO|PERA|MARACUJA|KIWI|AVOCADO|ABACATE/i.test(
+        /REFRIGERANTE|COCA|GUARANA|SUCO|CERVEJA|CHOPP|VINHO|VODKA|WHISKY|ENERG|NECTAR|BEBIDA|AGUA\b/i.test(
+          prodUpper,
+        )
+      ) {
+        codigoCategoria = 'BEBIDAS'
+      } else if (
+        /BANANA|MACA|LARANJA|LIMAO|MANGA|UVA|MELANCIA|MAMAO|ABACAXI|MORANGO|PERA|MARACUJA|KIWI|AVOCADO|ABACATE/i.test(
           prodUpper,
         )
       ) {
         codigoCategoria = 'HORTIFRUTI_FRUTAS'
       } else if (
-        /ALFACE|TOMATE|BATATA|CEBOLA|ALHO|CENOURA|CHUCHU|ABOBORA|BROCOLIS|COUVE|ESPINAFRE|REPOLHO|PEPINO|BETERRABA|PIMENTAO/i.test(
+        /ALFACE|TOMATE|BATATA|CEBOLA|CEBOLINHA|ALHO|CENOURA|CHUCHU|ABOBORA|BROCOLIS|COUVE|ESPINAFRE|REPOLHO|PEPINO|BETERRABA|PIMENTAO|HORTELA/i.test(
           prodUpper,
         )
       ) {
@@ -417,27 +447,9 @@ Instruções:
       ) {
         codigoCategoria = 'LATICINIOS_E_OVOS'
       } else if (
-        /PAO|BOLO|TORRADA|SONHO|BISNAGUITA|CROISSANT|BAGUETE|PAOZINHO|PANETONE/i.test(
-          prodUpper,
-        )
-      ) {
-        codigoCategoria = 'PADARIA_E_CONFEITARIA'
-      } else if (
         /SORVETE|PIZZA|HAMBURGUER|NUGGETS|LASANHA|CONGELAD/i.test(prodUpper)
       ) {
         codigoCategoria = 'CONGELADOS'
-      } else if (
-        /AGUA|REFRIGERANTE|COCA|GUARANA|SUCO|CERVEJA|CHOPP|VINHO|VODKA|WHISKY|ENERG|NECTAR|BEBIDA/i.test(
-          prodUpper,
-        )
-      ) {
-        codigoCategoria = 'BEBIDAS'
-      } else if (
-        /SABAO|DETERGENTE|AMACIANTE|DESINFETANTE|AGUA SANITARIA|ALCOOL|SAPOLIO|LAVAND|LIMPADOR|INSETICIDA|ESPONJA|MULTIUSO/i.test(
-          prodUpper,
-        )
-      ) {
-        codigoCategoria = 'LIMPEZA'
       } else if (
         /SHAMPOO|CONDICIONADOR|SABONETE|PASTA DE DENTE|CREME DENTAL|DESODORANTE|PAPEL HIGIENICO|ABSORVENTE|FRALDA|GILETTE|COTONETE/i.test(
           prodUpper,
@@ -448,12 +460,6 @@ Instruções:
         /PET|RACAO|RAÇAO|GATO|CACHORRO|WHISKAS|PEDIGREE|SACHE/i.test(prodUpper)
       ) {
         codigoCategoria = 'PET_SHOP'
-      } else if (
-        /PRATO|COPO|TALHER|GUARDANAPO|POTE|VASSOURA|RODO|LAMPADA|PILHA|VELA/i.test(
-          prodUpper,
-        )
-      ) {
-        codigoCategoria = 'UTILIDADES_DOMESTICAS'
       }
 
       if (!codigosExistentes.has(codigoCategoria)) {

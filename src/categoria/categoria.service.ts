@@ -101,8 +101,9 @@ export class CategoriaService implements OnModuleInit {
   }
 
   async listarPrefixos(userId: string): Promise<Prefixo[]> {
+    const userObjectId = this.toUserId(userId)
     return this.prefixoModel
-      .find({ userId: this.toUserId(userId) })
+      .find({ $or: [{ userId: userObjectId }, { userId }] })
       .populate('categoria')
       .sort({ prefixo: 1 })
       .exec()
@@ -222,8 +223,9 @@ export class CategoriaService implements OnModuleInit {
     nomeProduto: string,
   ): Promise<Categoria | null> {
     const nomeUpperCase = nomeProduto.toUpperCase()
+    const userObjectId = this.toUserId(userId)
     const prefixos = await this.prefixoModel
-      .find({ userId: this.toUserId(userId) })
+      .find({ $or: [{ userId: userObjectId }, { userId }] })
       .populate('categoria')
       .exec()
 
@@ -250,7 +252,10 @@ export class CategoriaService implements OnModuleInit {
     // Se notaFiscalId for fornecido, o backend busca a nota fiscal no banco e lê os nomes dos produtos diretamente
     if (dto.notaFiscalId) {
       const nota = await this.notaFiscalModel
-        .findOne({ _id: dto.notaFiscalId, userId: userObjectId })
+        .findOne({
+          _id: dto.notaFiscalId,
+          $or: [{ userId: userObjectId }, { userId }],
+        })
         .populate('produtos')
         .exec()
 
@@ -275,7 +280,7 @@ export class CategoriaService implements OnModuleInit {
 
     // Buscar prefixos já existentes do usuário para pular produtos já classificados
     const existentes = await this.prefixoModel
-      .find({ userId: userObjectId })
+      .find({ $or: [{ userId: userObjectId }, { userId }] })
       .select('prefixo')
       .exec()
 
