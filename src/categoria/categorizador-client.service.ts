@@ -34,9 +34,9 @@ export class CategorizadorClientService {
   extrairPrefixo(nome: string): string {
     const limpo = nome.trim().toUpperCase()
 
-    // Detecta se tem prefixo fiscal de embalagem/medida: ex '1 MA - ', '0.686 KG - ', '1 FR - ', '1 PE - ', '1 PO - '
+    // Detecta se tem prefixo fiscal de embalagem/medida: ex '1 MA - ', '0.686 KG - ', '1 FR - ', '1 PE - ', '1 PO - ', '1 BR - '
     const fiscalMatch = limpo.match(
-      /^(\d+([.,]\d+)?\s*(MA|SH|TP|FR|PC|KG|UN|LT|CX|PT|GL|FD|BJ|PE|PO|BD|DZ|SC|TB|BL|LATA|BARRA|M|G|GR)\s*[-–—/]\s*)/i,
+      /^(\d+([.,]\d+)?\s*(MA|SH|TP|FR|PC|KG|UN|LT|CX|PT|GL|FD|BJ|PE|PO|BD|DZ|SC|TB|BL|BR|LATA|BARRA|M|G|GR)\s*[-–—/]\s*)/i,
     )
     let prefixoFiscal = ''
     let resto = limpo
