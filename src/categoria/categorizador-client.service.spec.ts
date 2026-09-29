@@ -52,11 +52,14 @@ describe('CategorizadorClientService', () => {
       expect(service.extrairPrefixo('ARROZ CAMIL T1 5KG')).toBe('ARROZ CAMIL')
     })
 
-    it('deve preservar a embalagem fiscal no prefixo sem colidir prefixos curtos genéricos (1 MA, 1 FR)', () => {
+    it('deve preservar a embalagem fiscal no prefixo sem colidir prefixos curtos genéricos (1 MA, 1 FR, 1 PE, 1 PO)', () => {
       expect(service.extrairPrefixo('1 MA - AGRIAO HIDROPONICO')).toBe('1 MA - AGRIAO HIDROPONICO')
       expect(service.extrairPrefixo('1 MA - COENTRO')).toBe('1 MA - COENTRO')
       expect(service.extrairPrefixo('1 FR - DES LYSOFORM SUAVE')).toBe('1 FR - DES LYSOFORM')
       expect(service.extrairPrefixo('1 FR - VINAGRE BELMONT ALCO')).toBe('1 FR - VINAGRE BELMONT')
+      expect(service.extrairPrefixo('1 PE - BROCOLIS JAPON/NINJA')).toBe('1 PE - BROCOLIS JAPON')
+      expect('1 PE - BROCOLIS JAPON/NINJA'.startsWith(service.extrairPrefixo('1 PE - BROCOLIS JAPON/NINJA'))).toBe(true)
+      expect(service.extrairPrefixo('1 PO - REQ POCOS CALDA')).toBe('1 PO - REQ POCOS')
     })
   })
 
