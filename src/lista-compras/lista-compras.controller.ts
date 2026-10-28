@@ -16,6 +16,9 @@ import { MarcarItemDto } from './dto/marcar-item.dto'
 import { AdicionarItemDto } from './dto/adicionar-item.dto'
 import { SalvarApelidoDto } from './dto/salvar-apelido.dto'
 import { SalvarItensLoteDto } from './dto/salvar-itens-lote.dto'
+import { AdicionarVozDto } from './dto/adicionar-voz.dto'
+import { AtualizarRascunhoDto } from './dto/atualizar-rascunho.dto'
+import { ProcessarRagDto } from './dto/processar-rag.dto'
 
 @Controller('lista-compras')
 @UseGuards(JwtAuthGuard)
@@ -25,6 +28,48 @@ export class ListaComprasController {
   @Get('mercados')
   listarMercados(@UserId() userId: string) {
     return this.listaComprasService.listarMercadosComHistorico(userId)
+  }
+
+  @Get('rascunho')
+  obterRascunho(@UserId() userId: string) {
+    return this.listaComprasService.obterRascunho(userId)
+  }
+
+  @Post('rascunho/voz')
+  adicionarItensPorVoz(
+    @UserId() userId: string,
+    @Body() dto: AdicionarVozDto,
+  ) {
+    return this.listaComprasService.adicionarItensPorVoz(userId, dto)
+  }
+
+  @Patch('rascunho')
+  atualizarRascunho(
+    @UserId() userId: string,
+    @Body() dto: AtualizarRascunhoDto,
+  ) {
+    return this.listaComprasService.atualizarRascunho(userId, dto)
+  }
+
+  @Delete('rascunho')
+  limparRascunho(@UserId() userId: string) {
+    return this.listaComprasService.limparRascunho(userId)
+  }
+
+  @Post('processar-rag')
+  processarListaComRag(
+    @UserId() userId: string,
+    @Body() dto: ProcessarRagDto,
+  ) {
+    return this.listaComprasService.processarListaComRag(userId, dto)
+  }
+
+  @Post('voz-ativa')
+  adicionarVozNaListaAtiva(
+    @UserId() userId: string,
+    @Body() dto: AdicionarVozDto,
+  ) {
+    return this.listaComprasService.adicionarVozNaListaAtiva(userId, dto)
   }
 
   @Post('gerar')

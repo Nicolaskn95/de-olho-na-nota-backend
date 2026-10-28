@@ -9,6 +9,28 @@ export class ItemLista {
   @Prop({ required: true })
   nomeOriginal: string
 
+  @Prop({ type: String, default: null })
+  termoFalado?: string | null
+
+  @Prop({ type: String, default: null })
+  nomeMercado?: string | null
+
+  @Prop({
+    type: String,
+    enum: [
+      'MERCADO_SELECIONADO',
+      'OUTRO_MERCADO',
+      'SEM_HISTORICO',
+      'RECORRENCIA',
+      'MANUAL',
+    ],
+    default: 'RECORRENCIA',
+  })
+  origemMatch?: string
+
+  @Prop({ type: String, default: null })
+  estabelecimentoOrigem?: string | null
+
   @Prop({ required: true })
   quantidade: number
 
