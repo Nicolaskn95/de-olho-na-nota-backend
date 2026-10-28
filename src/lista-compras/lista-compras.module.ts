@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
 import { ListaComprasController } from './lista-compras.controller'
 import { ListaComprasService } from './lista-compras.service'
+import { VozPlnRagService } from './voz-pln-rag.service'
 import {
   ListaCompras,
   ListaComprasSchema,
@@ -10,6 +11,10 @@ import {
   ProdutoApelido,
   ProdutoApelidoSchema,
 } from './schemas/produto-apelido.schema'
+import {
+  RascunhoListaCompras,
+  RascunhoListaComprasSchema,
+} from './schemas/rascunho-lista.schema'
 import {
   NotaFiscal,
   NotaFiscalSchema,
@@ -25,6 +30,7 @@ import {
     MongooseModule.forFeature([
       { name: ListaCompras.name, schema: ListaComprasSchema },
       { name: ProdutoApelido.name, schema: ProdutoApelidoSchema },
+      { name: RascunhoListaCompras.name, schema: RascunhoListaComprasSchema },
       { name: NotaFiscal.name, schema: NotaFiscalSchema },
       { name: Produto.name, schema: ProdutoSchema },
       {
@@ -34,6 +40,7 @@ import {
     ]),
   ],
   controllers: [ListaComprasController],
-  providers: [ListaComprasService],
+  providers: [ListaComprasService, VozPlnRagService],
+  exports: [ListaComprasService, VozPlnRagService],
 })
 export class ListaComprasModule {}

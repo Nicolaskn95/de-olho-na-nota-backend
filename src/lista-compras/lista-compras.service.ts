@@ -1,8 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { ListaCompras } from './schemas/lista-compras.schema'
 import { ProdutoApelido } from './schemas/produto-apelido.schema'
+import { RascunhoListaCompras } from './schemas/rascunho-lista.schema'
 import { NotaFiscal } from '../nota-fiscal/schemas/nota-fiscal.schema'
 import { Produto } from '../nota-fiscal/schemas/produto.schema'
 import { EstabelecimentoUsuario } from '../nota-fiscal/schemas/estabelecimento-usuario.schema'
@@ -11,6 +17,14 @@ import { MarcarItemDto } from './dto/marcar-item.dto'
 import { AdicionarItemDto } from './dto/adicionar-item.dto'
 import { SalvarApelidoDto } from './dto/salvar-apelido.dto'
 import { SalvarItensLoteDto } from './dto/salvar-itens-lote.dto'
+import { AdicionarVozDto } from './dto/adicionar-voz.dto'
+import { AtualizarRascunhoDto } from './dto/atualizar-rascunho.dto'
+import { ProcessarRagDto } from './dto/processar-rag.dto'
+import {
+  CandidatoHistoricoMercado,
+  VozPlnRagService,
+} from './voz-pln-rag.service'
+import { removerAcentos } from '../produto-catalogo/utils/sanitizar-produto.util'
 
 @Injectable()
 export class ListaComprasService {
@@ -24,6 +38,11 @@ export class ListaComprasService {
     @InjectModel(Produto.name) private readonly produtoModel: Model<Produto>,
     @InjectModel(EstabelecimentoUsuario.name)
     private readonly estabelecimentoUsuarioModel: Model<EstabelecimentoUsuario>,
+    @Optional()
+    @InjectModel(RascunhoListaCompras.name)
+    private readonly rascunhoListaModel?: Model<RascunhoListaCompras>,
+    @Optional()
+    private readonly vozPlnRagService?: VozPlnRagService,
   ) {}
 
   private userFilter(userId: string) {
@@ -68,8 +87,314 @@ export class ListaComprasService {
     }))
   }
 
-  async gerarLista(userId: string, dto: GerarListaDto) {
-    const periodoMeses = dto.periodoMeses || 3
+  // ==================== RASCUNHO POR VOZ (PLN) ====================
+
+  async obterRascunho(userId: string) {
+    if (!this.rascunhoListaModel) {
+      return { itens: [] }
+    }
+    const rascunho = await this.rascunhoListaModel.findOne(
+      this.userFilter(userId),
+    )
+    if (!rascunho) {
+      return { userId, itens: [] }
+    }
+    return rascunho
+  }
+
+  async adicionarItensPorVoz(userId: string, dto: AdicionarVozDto) {
+    if (!this.rascunhoListaModel || !this.vozPlnRagService) {
+      throw new BadRequestException('Serviço de voz/PLN não disponível.')
+    }
+
+    const extraidos = await this.vozPlnRagService.extrairItensDeComandoVoz(
+      dto.textoFalado,
+    )
+
+    if (extraidos.length === 0) {
+      throw new BadRequestException(
+        'Não foi possível identificar produtos no comando de voz informado.',
+      )
+    }
+
+    const existente = await this.rascunhoListaModel.findOne(
+      this.userFilter(userId),
+    )
+
+    const itensAtuais = existente ? [...existente.itens] : []
+
+    for (const novo of extraidos) {
+      const chaveNovo = removerAcentos(novo.termoFalado.toLowerCase().trim())
+      const idxExistente = itensAtuais.findIndex(
+        (i) =>
+          removerAcentos(i.termoFalado.toLowerCase().trim()) === chaveNovo &&
+          i.unidade.toUpperCase() === novo.unidade.toUpperCase(),
+      )
+
+      if (idxExistente >= 0) {
+        itensAtuais[idxExistente].quantidade = Number(
+          (itensAtuais[idxExistente].quantidade + novo.quantidade).toFixed(2),
+        )
+        itensAtuais[idxExistente].adicionadoEm = new Date()
+      } else {
+        itensAtuais.push({
+          termoFalado: novo.termoFalado,
+          quantidade: novo.quantidade,
+          unidade: novo.unidade,
+          adicionadoEm: new Date(),
+        })
+      }
+    }
+
+    const atualizado = await this.rascunhoListaModel.findOneAndUpdate(
+      this.userFilter(userId),
+      {
+        userId: new Types.ObjectId(userId),
+        itens: itensAtuais,
+      },
+      { upsert: true, new: true },
+    )
+
+    return {
+      rascunho: atualizado,
+      itensExtraidos: extraidos,
+    }
+  }
+
+  async atualizarRascunho(userId: string, dto: AtualizarRascunhoDto) {
+    if (!this.rascunhoListaModel) {
+      return { itens: dto.itens }
+    }
+
+    const itensLimpos = (dto.itens || [])
+      .filter((i) => i.termoFalado && i.termoFalado.trim().length > 0)
+      .map((i) => ({
+        termoFalado: i.termoFalado.trim(),
+        quantidade: Number(i.quantidade) > 0 ? Number(i.quantidade) : 1,
+        unidade: (i.unidade || 'UN').toUpperCase().trim(),
+        adicionadoEm: i.adicionadoEm ? new Date(i.adicionadoEm) : new Date(),
+      }))
+
+    return this.rascunhoListaModel.findOneAndUpdate(
+      this.userFilter(userId),
+      {
+        userId: new Types.ObjectId(userId),
+        itens: itensLimpos,
+      },
+      { upsert: true, new: true },
+    )
+  }
+
+  async limparRascunho(userId: string) {
+    if (this.rascunhoListaModel) {
+      await this.rascunhoListaModel.deleteOne(this.userFilter(userId))
+    }
+    return { success: true }
+  }
+
+  // ==================== PROCESSAMENTO RAG NO MERCADO ====================
+
+  private async construirCandidatosHistoricoUsuario(
+    userId: string,
+    cnpjSelecionado: string,
+  ): Promise<{
+    candidatos: CandidatoHistoricoMercado[]
+    nomeEstabelecimentoSelecionado: string
+  }> {
+    const todasNotas = await this.notaFiscalModel
+      .find(this.userFilter(userId))
+      .populate({ path: 'produtos', model: Produto.name })
+
+    const estabelecimentosUsuarios =
+      await this.estabelecimentoUsuarioModel.find(this.userFilter(userId))
+    const deParaMap = new Map(
+      estabelecimentosUsuarios.map((eu) => [eu.cnpj, eu.nomeDepara]),
+    )
+
+    const apelidos = await this.produtoApelidoModel.find(
+      this.userFilter(userId),
+    )
+    const apelidoMap = new Map(
+      apelidos.map((a) => [a.nomeOriginal.toUpperCase().trim(), a.apelido]),
+    )
+
+    let nomeEstabelecimentoSelecionado =
+      deParaMap.get(cnpjSelecionado) || 'Estabelecimento Desconhecido'
+
+    // Agrupa por (noMercadoSelecionado + nomeOriginal) para priorizar histórico do mercado escolhido
+    const mapaMercadoSelecionado = new Map<
+      string,
+      Array<{ produto: any; dataEmissao: Date; estabelecimento: string }>
+    >()
+    const mapaOutrosMercados = new Map<
+      string,
+      Array<{ produto: any; dataEmissao: Date; estabelecimento: string }>
+    >()
+
+    for (const nota of todasNotas) {
+      const noMercado = nota.cnpj === cnpjSelecionado
+      const nomeEstab =
+        deParaMap.get(nota.cnpj) || nota.estabelecimento || 'Supermercado'
+
+      if (
+        noMercado &&
+        nomeEstabelecimentoSelecionado === 'Estabelecimento Desconhecido' &&
+        nota.estabelecimento
+      ) {
+        nomeEstabelecimentoSelecionado = nota.estabelecimento
+      }
+
+      const prods = (nota.produtos || []) as any[]
+      for (const prod of prods) {
+        if (!prod || !prod.nome) continue
+        const chave = prod.nome.toUpperCase().trim()
+        const destino = noMercado ? mapaMercadoSelecionado : mapaOutrosMercados
+        if (!destino.has(chave)) destino.set(chave, [])
+        destino.get(chave)!.push({
+          produto: prod,
+          dataEmissao: nota.dataEmissao || new Date(),
+          estabelecimento: nomeEstab,
+        })
+      }
+    }
+
+    const candidatos: CandidatoHistoricoMercado[] = []
+
+    const converterGrupoEmCandidato = (
+      chave: string,
+      ocorrencias: Array<{
+        produto: any
+        dataEmissao: Date
+        estabelecimento: string
+      }>,
+      noMercadoSelecionado: boolean,
+    ): CandidatoHistoricoMercado => {
+      const ordenados = [...ocorrencias].sort(
+        (a, b) =>
+          new Date(b.dataEmissao).getTime() - new Date(a.dataEmissao).getTime(),
+      )
+      const maisRecente = ordenados[0]
+      const prod = maisRecente.produto
+      const valorUnitario =
+        prod.valorUnitario ||
+        (prod.quantidade > 0 ? prod.valorTotal / prod.quantidade : 0) ||
+        0
+
+      const apelido = apelidoMap.get(chave) || null
+
+      return {
+        nomeOriginal: prod.nome,
+        nomeExibicao: apelido || prod.nome,
+        apelido,
+        unidade: prod.unidade || 'UN',
+        valorUnitarioRecente: Number(valorUnitario.toFixed(2)),
+        frequencia: ocorrencias.length,
+        noMercadoSelecionado,
+        estabelecimento: maisRecente.estabelecimento,
+        ultimaCompra: new Date(maisRecente.dataEmissao),
+      }
+    }
+
+    for (const [chave, ocorrencias] of mapaMercadoSelecionado.entries()) {
+      candidatos.push(converterGrupoEmCandidato(chave, ocorrencias, true))
+    }
+
+    for (const [chave, ocorrencias] of mapaOutrosMercados.entries()) {
+      // Só adiciona de outro mercado se a mesma descrição exata já não estiver no mercado selecionado
+      if (!mapaMercadoSelecionado.has(chave)) {
+        candidatos.push(converterGrupoEmCandidato(chave, ocorrencias, false))
+      }
+    }
+
+    return { candidatos, nomeEstabelecimentoSelecionado }
+  }
+
+  async processarListaComRag(userId: string, dto: ProcessarRagDto) {
+    if (!this.rascunhoListaModel || !this.vozPlnRagService) {
+      throw new BadRequestException('Serviço RAG não disponível.')
+    }
+
+    const rascunho = await this.rascunhoListaModel.findOne(
+      this.userFilter(userId),
+    )
+
+    if (!rascunho || !rascunho.itens || rascunho.itens.length === 0) {
+      throw new BadRequestException(
+        'Sua pré-lista está vazia. Adicione itens usando o comando de voz antes de processar no mercado.',
+      )
+    }
+
+    const { candidatos, nomeEstabelecimentoSelecionado } =
+      await this.construirCandidatosHistoricoUsuario(userId, dto.cnpj)
+
+    const itensVinculados =
+      await this.vozPlnRagService.vincularItensComHistorico(
+        rascunho.itens.map((i) => ({
+          termoFalado: i.termoFalado,
+          quantidade: i.quantidade,
+          unidade: i.unidade,
+        })),
+        candidatos,
+      )
+
+    const itensFinais = [...itensVinculados]
+
+    // Opcionalmente mescla sugestões recorrentes do mercado que ainda não estejam na lista falada
+    if (dto.incluirSugestoesRecorrentes) {
+      const recorrentes = await this.calcularItensRecorrentesMercado(
+        userId,
+        dto.cnpj,
+        dto.periodoMeses || 3,
+      )
+      const nomesOriginaisPresentes = new Set(
+        itensFinais.map((i) => i.nomeOriginal.toUpperCase().trim()),
+      )
+
+      for (const rec of recorrentes) {
+        if (!nomesOriginaisPresentes.has(rec.nomeOriginal.toUpperCase().trim())) {
+          itensFinais.push({
+            ...rec,
+            termoFalado: rec.nome,
+            nomeMercado: rec.nomeOriginal,
+            origemMatch: 'RECORRENCIA' as any,
+            estabelecimentoOrigem: null,
+          })
+        }
+      }
+    }
+
+    const estimativaTotal = Number(
+      itensFinais
+        .reduce((sum, i) => sum + (i.valorEstimado || 0), 0)
+        .toFixed(2),
+    )
+
+    const listaDocs = await this.listaComprasModel.findOneAndUpdate(
+      this.userFilter(userId),
+      {
+        userId: new Types.ObjectId(userId),
+        cnpj: dto.cnpj,
+        nomeEstabelecimento: nomeEstabelecimentoSelecionado,
+        periodoAnaliseMeses: dto.periodoMeses || 3,
+        estimativaTotal,
+        itens: itensFinais,
+      },
+      { upsert: true, new: true },
+    )
+
+    // Limpa o rascunho após gerar a lista processada no mercado
+    await this.rascunhoListaModel.deleteOne(this.userFilter(userId))
+
+    return listaDocs
+  }
+
+  // ==================== GERAÇÃO POR RECORRÊNCIA (EXISTENTE) ====================
+
+  private async calcularItensRecorrentesMercado(
+    userId: string,
+    cnpj: string,
+    periodoMeses: number,
+  ) {
     const dataFim = new Date()
     const dataInicio = new Date()
     dataInicio.setMonth(dataInicio.getMonth() - periodoMeses)
@@ -77,7 +402,7 @@ export class ListaComprasService {
     const notas = await this.notaFiscalModel
       .find({
         ...this.userFilter(userId),
-        cnpj: dto.cnpj,
+        cnpj,
         dataEmissao: { $gte: dataInicio, $lte: dataFim },
       })
       .populate({ path: 'produtos', model: Produto.name })
@@ -138,6 +463,10 @@ export class ListaComprasService {
       itensFiltrados.push({
         nome: nomeExibicao,
         nomeOriginal: maisRecente.nome,
+        termoFalado: apelidoMap.get(nomeChave) || null,
+        nomeMercado: maisRecente.nome,
+        origemMatch: 'RECORRENCIA',
+        estabelecimentoOrigem: null,
         quantidade: mediaQuantidade,
         unidade: maisRecente.unidade,
         valorEstimado,
@@ -151,6 +480,17 @@ export class ListaComprasService {
       if (b.frequencia !== a.frequencia) return b.frequencia - a.frequencia
       return a.nome.localeCompare(b.nome)
     })
+
+    return itensFiltrados
+  }
+
+  async gerarLista(userId: string, dto: GerarListaDto) {
+    const periodoMeses = dto.periodoMeses || 3
+    const itensFiltrados = await this.calcularItensRecorrentesMercado(
+      userId,
+      dto.cnpj,
+      periodoMeses,
+    )
 
     const estimativaTotal = itensFiltrados.reduce(
       (sum, i) => sum + i.valorEstimado,
@@ -166,8 +506,14 @@ export class ListaComprasService {
 
     if (estabelecimentoUsuario?.nomeDepara) {
       nomeEstabelecimento = estabelecimentoUsuario.nomeDepara
-    } else if (notas.length > 0) {
-      nomeEstabelecimento = notas[0].estabelecimento
+    } else {
+      const notaQualquer = await this.notaFiscalModel.findOne({
+        ...this.userFilter(userId),
+        cnpj: dto.cnpj,
+      })
+      if (notaQualquer?.estabelecimento) {
+        nomeEstabelecimento = notaQualquer.estabelecimento
+      }
     }
 
     const listaDocs = await this.listaComprasModel.findOneAndUpdate(
@@ -251,6 +597,10 @@ export class ListaComprasService {
     const newItem = {
       nome: dto.nome,
       nomeOriginal: dto.nome,
+      termoFalado: dto.nome,
+      nomeMercado: null,
+      origemMatch: 'MANUAL',
+      estabelecimentoOrigem: null,
       quantidade: dto.quantidade,
       unidade: dto.unidade,
       valorEstimado,
@@ -270,6 +620,59 @@ export class ListaComprasService {
     )
     if (!lista) throw new NotFoundException('Lista não encontrada')
     return lista
+  }
+
+  /**
+   * Permite adicionar novos itens por comando de voz diretamente em uma lista já gerada,
+   * processando-os imediatamente no RAG do mercado atual da lista!
+   */
+  async adicionarVozNaListaAtiva(userId: string, dto: AdicionarVozDto) {
+    if (!this.vozPlnRagService) {
+      throw new BadRequestException('Serviço de voz/PLN não disponível.')
+    }
+
+    const listaAtual = await this.listaComprasModel.findOne(
+      this.userFilter(userId),
+    )
+    if (!listaAtual) {
+      throw new NotFoundException('Lista ativa não encontrada.')
+    }
+
+    const extraidos = await this.vozPlnRagService.extrairItensDeComandoVoz(
+      dto.textoFalado,
+    )
+    if (extraidos.length === 0) {
+      throw new BadRequestException(
+        'Não foi possível identificar produtos no comando de voz informado.',
+      )
+    }
+
+    const { candidatos } = await this.construirCandidatosHistoricoUsuario(
+      userId,
+      listaAtual.cnpj,
+    )
+
+    const novosVinculados =
+      await this.vozPlnRagService.vincularItensComHistorico(
+        extraidos,
+        candidatos,
+      )
+
+    const somaAdicional = novosVinculados.reduce(
+      (acc, i) => acc + (i.valorEstimado || 0),
+      0,
+    )
+
+    const listaAtualizada = await this.listaComprasModel.findOneAndUpdate(
+      this.userFilter(userId),
+      {
+        $push: { itens: { $each: novosVinculados } },
+        $inc: { estimativaTotal: Number(somaAdicional.toFixed(2)) },
+      },
+      { new: true },
+    )
+
+    return listaAtualizada
   }
 
   async excluirLista(userId: string) {

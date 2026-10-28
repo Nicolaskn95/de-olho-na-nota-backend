@@ -19,6 +19,12 @@ describe('ListaComprasController', () => {
       salvarApelido: jest.fn(),
       listarApelidos: jest.fn(),
       removerApelido: jest.fn(),
+      obterRascunho: jest.fn(),
+      adicionarItensPorVoz: jest.fn(),
+      atualizarRascunho: jest.fn(),
+      limparRascunho: jest.fn(),
+      processarListaComRag: jest.fn(),
+      adicionarVozNaListaAtiva: jest.fn(),
     }
 
     const module: TestingModule = await Test.createTestingModule({
