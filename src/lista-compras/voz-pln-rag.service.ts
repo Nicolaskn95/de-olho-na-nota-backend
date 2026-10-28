@@ -191,12 +191,13 @@ export class VozPlnRagService {
     return (
       this.configService.get<string>('GEMINI_MODEL') ||
       process.env.GEMINI_MODEL ||
-      'gemini-3.8-flash'
+      'gemini-3.5-flash-lite'
     ).trim()
   }
 
   /**
    * Chama a Gemini Interactions API (v1beta/interactions) com suporte a JSON Schema estruturado e entrada de texto ou multimodal (áudio).
+   * Possui fallback automático entre gemini-3.5-flash-lite e gemini-3.1-flash-lite caso ocorra limite de taxa (429).
    */
   private async chamarGeminiJson<T>(
     systemInstruction: string,
@@ -208,65 +209,75 @@ export class VozPlnRagService {
       return null
     }
 
-    const model = this.getGeminiModel()
+    const modeloPreferido = this.getGeminiModel()
+    const modelosTentativa = Array.from(
+      new Set([
+        modeloPreferido,
+        'gemini-3.5-flash-lite',
+        'gemini-3.1-flash-lite',
+      ]),
+    )
 
-    try {
-      const response = await axios.post(
-        'https://generativelanguage.googleapis.com/v1beta/interactions',
-        {
-          model,
-          system_instruction: systemInstruction,
-          input: promptInput,
-          store: false,
-          response_format: {
-            type: 'text',
-            mime_type: 'application/json',
-            schema: jsonSchema,
+    for (const model of modelosTentativa) {
+      try {
+        const response = await axios.post(
+          'https://generativelanguage.googleapis.com/v1beta/interactions',
+          {
+            model,
+            system_instruction: systemInstruction,
+            input: promptInput,
+            store: false,
+            response_format: {
+              type: 'text',
+              mime_type: 'application/json',
+              schema: jsonSchema,
+            },
           },
-        },
-        {
-          headers: {
-            'x-goog-api-key': apiKey,
-            'Content-Type': 'application/json',
+          {
+            headers: {
+              'x-goog-api-key': apiKey,
+              'Content-Type': 'application/json',
+            },
+            timeout: 20000,
           },
-          timeout: 20000,
-        },
-      )
+        )
 
-      const data = response.data
-      let rawText: string | null = data?.output_text || null
+        const data = response.data
+        let rawText: string | null = data?.output_text || null
 
-      if (!rawText && Array.isArray(data?.steps)) {
-        for (let i = data.steps.length - 1; i >= 0; i--) {
-          const step = data.steps[i]
-          if (step?.type === 'model_output' && Array.isArray(step.content)) {
-            const textPart = step.content.find(
-              (c: any) => c?.type === 'text' && typeof c.text === 'string',
-            )
-            if (textPart) {
-              rawText = textPart.text
-              break
+        if (!rawText && Array.isArray(data?.steps)) {
+          for (let i = data.steps.length - 1; i >= 0; i--) {
+            const step = data.steps[i]
+            if (step?.type === 'model_output' && Array.isArray(step.content)) {
+              const textPart = step.content.find(
+                (c: any) => c?.type === 'text' && typeof c.text === 'string',
+              )
+              if (textPart) {
+                rawText = textPart.text
+                break
+              }
             }
           }
         }
+
+        if (!rawText) {
+          continue
+        }
+
+        const cleaned = rawText
+          .replace(/```json/gi, '')
+          .replace(/```/g, '')
+          .trim()
+
+        return JSON.parse(cleaned) as T
+      } catch (err: any) {
+        this.logger.warn(
+          `Aviso ao consultar modelo ${model} na Gemini API (${err?.message}). Tentando próximo fallback...`,
+        )
       }
-
-      if (!rawText) {
-        return null
-      }
-
-      const cleaned = rawText
-        .replace(/```json/gi, '')
-        .replace(/```/g, '')
-        .trim()
-
-      return JSON.parse(cleaned) as T
-    } catch (err: any) {
-      this.logger.warn(
-        `Aviso ao consultar Gemini Interactions API (${err?.message}). Utilizando motor PLN/RAG determinístico local.`,
-      )
-      return null
     }
+
+    return null
   }
 
   /**
