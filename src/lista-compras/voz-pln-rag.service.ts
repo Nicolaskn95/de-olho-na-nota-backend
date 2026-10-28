@@ -196,11 +196,11 @@ export class VozPlnRagService {
   }
 
   /**
-   * Chama a Gemini Interactions API (v1beta/interactions) com suporte a JSON Schema estruturado.
+   * Chama a Gemini Interactions API (v1beta/interactions) com suporte a JSON Schema estruturado e entrada de texto ou multimodal (áudio).
    */
   private async chamarGeminiJson<T>(
     systemInstruction: string,
-    promptText: string,
+    promptInput: string | Array<Record<string, any>>,
     jsonSchema: Record<string, any>,
   ): Promise<T | null> {
     const apiKey = this.getGeminiApiKey()
@@ -216,7 +216,7 @@ export class VozPlnRagService {
         {
           model,
           system_instruction: systemInstruction,
-          input: promptText,
+          input: promptInput,
           store: false,
           response_format: {
             type: 'text',
@@ -229,7 +229,7 @@ export class VozPlnRagService {
             'x-goog-api-key': apiKey,
             'Content-Type': 'application/json',
           },
-          timeout: 15000,
+          timeout: 20000,
         },
       )
 
@@ -267,6 +267,96 @@ export class VozPlnRagService {
       )
       return null
     }
+  }
+
+  /**
+   * Transcreve áudio gravado no dispositivo (ex: iPhone Safari / PWA MediaRecorder) e extrai os itens via PLN usando Gemini.
+   */
+  async extrairItensDeAudioBase64(
+    audioBase64: string,
+    mimeType = 'audio/mp4',
+  ): Promise<{ textoTranscrito: string; itens: ItemExtraidoPln[] }> {
+    const base64Limpo = (audioBase64 || '')
+      .replace(/^data:audio\/[^;]+;base64,/i, '')
+      .trim()
+
+    if (!base64Limpo) {
+      return { textoTranscrito: '', itens: [] }
+    }
+
+    const mimeNormalizado = (mimeType || 'audio/mp4')
+      .split(';')[0]
+      .trim()
+      .toLowerCase()
+
+    const schema = {
+      type: 'object',
+      properties: {
+        textoTranscrito: { type: 'string' },
+        itens: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              termoFalado: { type: 'string' },
+              quantidade: { type: 'number' },
+              unidade: { type: 'string' },
+            },
+            required: ['termoFalado', 'quantidade', 'unidade'],
+          },
+        },
+      },
+      required: ['textoTranscrito', 'itens'],
+    }
+
+    const systemPrompt =
+      'Você é um especialista em PLN e reconhecimento de voz em português brasileiro para listas de compras de supermercado. Transcreva fielmente o áudio enviado pelo usuário em "textoTranscrito" e extraia todos os produtos mencionados em "itens" com suas quantidades e unidades padronizadas (UN, KG, G, L, ML, PCT, CX, LATA, BJ, FD, DZ). Remova verbos de comando como "adicionar", "colocar", "comprar".'
+
+    const inputMultimodal = [
+      {
+        type: 'text',
+        text: 'Transcreva este áudio de lista de compras em português e extraia os itens estruturados.',
+      },
+      {
+        type: 'audio',
+        data: base64Limpo,
+        mime_type: mimeNormalizado,
+      },
+    ]
+
+    const respostaIa = await this.chamarGeminiJson<{
+      textoTranscrito: string
+      itens: ItemExtraidoPln[]
+    }>(systemPrompt, inputMultimodal, schema)
+
+    if (respostaIa) {
+      const itensValidos = Array.isArray(respostaIa.itens)
+        ? respostaIa.itens
+            .map((item) => ({
+              termoFalado: this.formatarTermoFalado(item.termoFalado || ''),
+              quantidade:
+                Number(item.quantidade) > 0 ? Number(item.quantidade) : 1,
+              unidade: this.normalizarUnidade(item.unidade),
+            }))
+            .filter((i) => i.termoFalado.length >= 2)
+        : []
+
+      if (itensValidos.length > 0) {
+        return {
+          textoTranscrito: respostaIa.textoTranscrito || '',
+          itens: itensValidos,
+        }
+      }
+
+      if (respostaIa.textoTranscrito) {
+        return {
+          textoTranscrito: respostaIa.textoTranscrito,
+          itens: this.extrairItensDeterministico(respostaIa.textoTranscrito),
+        }
+      }
+    }
+
+    return { textoTranscrito: '', itens: [] }
   }
 
   /**
